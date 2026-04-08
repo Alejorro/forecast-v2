@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import session from 'express-session';
 
 // Initialize DB (runs schema on first start)
 import './db.js';
@@ -10,6 +11,9 @@ import transactionsRouter from './routes/transactions.js';
 import plansRouter        from './routes/plans.js';
 import overviewRouter     from './routes/overview.js';
 import summaryRouter      from './routes/summary.js';
+import authRouter         from './routes/auth.js';
+
+import { attachUser, requireAdmin } from './middleware/auth.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -22,9 +26,25 @@ app.use(cors({
   origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
+  credentials: true,
 }));
 
 app.use(express.json());
+
+app.use(session({
+  name:   'dot4.sid',
+  secret: process.env.SESSION_SECRET || 'dot4-forecast-internal-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge:   8 * 60 * 60 * 1000, // 8 hours
+  },
+}));
+
+// Attach session user to req.user on every request
+app.use(attachUser);
 
 // ─── No-cache for all /api routes ────────────────────────────────────────────
 
@@ -39,11 +59,19 @@ app.use('/api', (_req, res, next) => {
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+app.use('/api/auth', authRouter);
+
 app.use('/api/brands',       brandsRouter);
 app.use('/api/sellers',      sellersRouter);
 app.use('/api/transactions', transactionsRouter);
-app.use('/api/plans',        plansRouter);
-app.use('/api/overview',     overviewRouter);
+
+// Plans: GET is open; PUT requires admin
+app.use('/api/plans', (req, res, next) => {
+  if (req.method === 'PUT') return requireAdmin(req, res, next);
+  next();
+}, plansRouter);
+
+app.use('/api/overview', overviewRouter);
 
 // summary routes: /api/brands/:id/summary and /api/sellers/summary
 app.use('/api', summaryRouter);

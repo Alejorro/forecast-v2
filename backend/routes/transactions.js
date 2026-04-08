@@ -8,6 +8,7 @@ import {
   quarterToAllocations,
   STAGE_MAP,
 } from '../lib/forecast.js';
+import { requireAdmin, requireWrite } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -51,7 +52,7 @@ function buildListQuery(params) {
     else if (q === 'Q2' || q === '2') conditions.push('t.allocation_q2 > 0');
     else if (q === 'Q3' || q === '3') conditions.push('t.allocation_q3 > 0');
     else if (q === 'Q4' || q === '4') conditions.push('t.allocation_q4 > 0');
-    // 1Q-4Q: all quarters, no additional filter needed
+    else if (q === 'Q1-Q4') conditions.push('t.allocation_q1 > 0 AND t.allocation_q2 > 0 AND t.allocation_q3 > 0 AND t.allocation_q4 > 0');
   }
 
   if (include_loss === 'true') {
@@ -91,6 +92,27 @@ function resolveAllocations(body) {
   };
 }
 
+/**
+ * For seller role: look up their seller_id from the DB and verify the
+ * submitted seller_id matches. Returns an error string or null.
+ */
+function enforceSellerIdentity(user, submittedSellerId) {
+  if (!user || user.role !== 'seller') return null; // admin passes through
+
+  const row = db.prepare('SELECT id FROM sellers WHERE name_normalized = ?')
+    .get(user.sellerName.toLowerCase().trim());
+
+  if (!row) {
+    return `Seller account not found in database for: ${user.sellerName}`;
+  }
+
+  if (Number(submittedSellerId) !== row.id) {
+    return 'You can only create transactions under your own seller identity';
+  }
+
+  return null;
+}
+
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 // GET /api/transactions
@@ -128,9 +150,13 @@ router.get('/:id', (req, res) => {
 });
 
 // POST /api/transactions
-router.post('/', (req, res) => {
+router.post('/', requireWrite, (req, res) => {
   const body = req.body;
   const isLossRow = body.stage_label === 'LOSS';
+
+  // Sellers can only create transactions under their own identity
+  const sellerErr = enforceSellerIdentity(req.user, body.seller_id);
+  if (sellerErr) return res.status(403).json({ error: sellerErr });
 
   if (!body.client_name) return res.status(400).json({ error: 'client_name is required' });
   if (!body.seller_id)   return res.status(400).json({ error: 'seller_id is required' });
@@ -247,8 +273,8 @@ router.post('/', (req, res) => {
   res.status(201).json(deriveTransaction(created));
 });
 
-// PUT /api/transactions/:id
-router.put('/:id', (req, res) => {
+// PUT /api/transactions/:id — admin only
+router.put('/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT id FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
   if (!existing) return res.status(404).json({ error: 'Transaction not found' });
@@ -390,8 +416,8 @@ router.put('/:id', (req, res) => {
   res.json(deriveTransaction(updated));
 });
 
-// DELETE /api/transactions/:id — soft delete
-router.delete('/:id', (req, res) => {
+// DELETE /api/transactions/:id — soft delete, admin only
+router.delete('/:id', requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT id FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
   if (!existing) return res.status(404).json({ error: 'Transaction not found' });
@@ -401,10 +427,14 @@ router.delete('/:id', (req, res) => {
 });
 
 // POST /api/transactions/:id/duplicate — clone transaction
-router.post('/:id/duplicate', (req, res) => {
+router.post('/:id/duplicate', requireWrite, (req, res) => {
   const id = Number(req.params.id);
   const original = db.prepare('SELECT * FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
   if (!original) return res.status(404).json({ error: 'Transaction not found' });
+
+  // Sellers can only duplicate transactions that belong to themselves
+  const sellerErr = enforceSellerIdentity(req.user, original.seller_id);
+  if (sellerErr) return res.status(403).json({ error: sellerErr });
 
   const result = db.prepare(`
     INSERT INTO transactions (

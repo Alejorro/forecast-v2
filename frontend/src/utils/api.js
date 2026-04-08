@@ -2,6 +2,7 @@ const BASE_URL = 'http://localhost:3001'
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
@@ -12,6 +13,26 @@ async function request(path, options = {}) {
   // Handle 204 No Content
   if (res.status === 204) return null
   return res.json()
+}
+
+// --- Auth ---
+export function getMe() {
+  return request('/api/auth/me')
+}
+
+export function login(username, password) {
+  return request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+}
+
+export function loginAsGuest() {
+  return request('/api/auth/guest', { method: 'POST' })
+}
+
+export function logout() {
+  return request('/api/auth/logout', { method: 'POST' })
 }
 
 // --- Brands ---

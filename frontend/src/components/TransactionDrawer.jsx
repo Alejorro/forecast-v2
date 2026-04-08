@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppContext } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { createTransaction, updateTransaction, deleteTransaction } from '../utils/api'
 import { formatUSD } from '../utils/format'
 
@@ -85,11 +86,21 @@ const inputClass =
 
 export default function TransactionDrawer({ transaction, onClose, onSaved }) {
   const { brands, sellers } = useAppContext()
+  const { user } = useAuth()
   const isEdit = Boolean(transaction)
+  const isSeller = user?.role === 'seller'
 
-  const [form, setForm] = useState(
-    isEdit ? buildFormFromTransaction(transaction) : { ...EMPTY_FORM }
-  )
+  // For seller role: pre-fill their own seller_id on create
+  const initialForm = (() => {
+    if (isEdit) return buildFormFromTransaction(transaction)
+    if (isSeller) {
+      const matched = sellers.find((s) => s.name === user.sellerName)
+      return { ...EMPTY_FORM, seller_id: matched ? String(matched.id) : '' }
+    }
+    return { ...EMPTY_FORM }
+  })()
+
+  const [form, setForm] = useState(initialForm)
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -280,16 +291,22 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             </Field>
 
             <Field label="Seller" required error={errors.seller_id}>
-              <select
-                className={inputClass}
-                value={form.seller_id}
-                onChange={(e) => set('seller_id', e.target.value)}
-              >
-                <option value="">Select seller...</option>
-                {sellers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              {isSeller ? (
+                <div className={`${inputClass} bg-slate-50 text-slate-500 cursor-not-allowed`}>
+                  {isEdit ? (transaction.seller_name || user.sellerName) : user.sellerName}
+                </div>
+              ) : (
+                <select
+                  className={inputClass}
+                  value={form.seller_id}
+                  onChange={(e) => set('seller_id', e.target.value)}
+                >
+                  <option value="">Select seller...</option>
+                  {sellers.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              )}
             </Field>
           </div>
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { getPlans, updatePlan } from '../utils/api'
 import { formatUSD, formatNumber } from '../utils/format'
 
@@ -37,6 +38,8 @@ function GapCell({ gap }) {
 
 export default function PlansPage() {
   const { year } = useAppContext()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   const [rows, setRows] = useState([])
   const [edits, setEdits] = useState({})
@@ -125,30 +128,32 @@ export default function PlansPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-semibold text-slate-900">Plans</h1>
-        <div className="flex items-center gap-3">
-          {saveError && (
-            <span className="text-sm text-red-500">{saveError}</span>
-          )}
-          {hasChanges && !saving && (
-            <span className="text-sm text-slate-400">
-              {dirtyBrandCount} brand{dirtyBrandCount !== 1 ? 's' : ''} modified
-            </span>
-          )}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={[
-              'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors',
-              hasChanges && !saving
-                ? 'text-white bg-blue-600 hover:bg-blue-700 shadow-sm'
-                : saving
-                  ? 'text-blue-300 bg-blue-100 cursor-not-allowed'
-                  : 'text-blue-300 bg-blue-50 cursor-not-allowed',
-            ].join(' ')}
-          >
-            {saving ? 'Saving...' : 'Save all changes'}
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            {saveError && (
+              <span className="text-sm text-red-500">{saveError}</span>
+            )}
+            {hasChanges && !saving && (
+              <span className="text-sm text-slate-400">
+                {dirtyBrandCount} brand{dirtyBrandCount !== 1 ? 's' : ''} modified
+              </span>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className={[
+                'flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors',
+                hasChanges && !saving
+                  ? 'text-white bg-blue-600 hover:bg-blue-700 shadow-sm'
+                  : saving
+                    ? 'text-blue-300 bg-blue-100 cursor-not-allowed'
+                    : 'text-blue-300 bg-blue-50 cursor-not-allowed',
+              ].join(' ')}
+            >
+              {saving ? 'Saving...' : 'Save all changes'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Table card */}
@@ -224,6 +229,14 @@ export default function PlansPage() {
                             ? edits[row.brand_id][field]
                             : displayValue(row[field])
 
+                          if (!isAdmin) {
+                            return (
+                              <td key={field} className="border-l border-slate-200 px-3 py-2.5 text-sm text-right tabular-nums text-slate-600">
+                                {row[field] != null ? formatUSD(row[field]) : <span className="text-slate-300">—</span>}
+                              </td>
+                            )
+                          }
+
                           return (
                             <td
                               key={field}
@@ -280,7 +293,7 @@ export default function PlansPage() {
       </div>
 
       {/* Editing hint */}
-      {!loading && rows.length > 0 && (
+      {isAdmin && !loading && rows.length > 0 && (
         <p className="mt-3 text-xs text-slate-500">
           Click any Q1–Q4 cell to edit. Unsaved changes are highlighted in amber.
         </p>

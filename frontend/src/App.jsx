@@ -1,23 +1,14 @@
 import React, { useState } from 'react'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { AppProvider } from './context/AppContext'
 import AppLayout from './components/AppLayout'
+import LoginPage from './pages/LoginPage'
 import TransactionsPage from './pages/TransactionsPage'
 import OverviewPage from './pages/OverviewPage'
 import PlansPage from './pages/PlansPage'
 import ImportPage from './pages/ImportPage'
 import BrandsPage from './pages/BrandsPage'
 import SellersPage from './pages/SellersPage'
-
-function PlaceholderPage({ title }) {
-  return (
-    <div className="flex items-center justify-center min-h-[300px]">
-      <div className="text-center">
-        <h2 className="text-lg font-semibold text-[#0F172A]">{title}</h2>
-        <p className="text-sm text-[#94A3B8] mt-1">Coming soon</p>
-      </div>
-    </div>
-  )
-}
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState('transactions')
@@ -48,10 +39,32 @@ function AppContent() {
   )
 }
 
-export default function App() {
+function AppRoot() {
+  const { user, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
+        <span className="text-sm text-[#64748B]">Cargando...</span>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginPage />
+  }
+
   return (
     <AppProvider>
       <AppContent />
     </AppProvider>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppRoot />
+    </AuthProvider>
   )
 }

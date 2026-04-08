@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useAppContext } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { getTransactions } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
@@ -13,7 +14,7 @@ const STAGE_OPTIONS = [
   { value: 'Won',         label: 'WON 100%'       },
   { value: 'LOSS',        label: 'LOSS'           },
 ]
-const QUARTER_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4']
+const QUARTER_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4', 'Q1-Q4']
 
 function IconInbox() {
   return (
@@ -46,13 +47,54 @@ function FilterSelect({ value, onChange, children, placeholder }) {
   )
 }
 
+const STAGE_PERCENT = {
+  'LOSS':        0,
+  'Identified':  10,
+  'Proposal 25': 25,
+  'Proposal 50': 50,
+  'Proposal 75': 75,
+  'Won':         100,
+}
+
+function stagePercent(tx) {
+  return STAGE_PERCENT[tx.status_label === 'LOSS' ? 'LOSS' : tx.stage_label] ?? 0
+}
+
 const TH_BASE = 'px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center'
 const TH      = TH_BASE
 const TH_SEP  = TH_BASE + ' border-l border-slate-200'
 const SEP     = ' border-l border-slate-200'
 
+function SortArrow({ active, dir }) {
+  if (active) {
+    return (
+      <span className="ml-1 inline-block text-blue-500">
+        {dir === 'asc' ? '↑' : '↓'}
+      </span>
+    )
+  }
+  return (
+    <span className="ml-1 inline-block text-slate-300">↑↓</span>
+  )
+}
+
+function SortableTH({ col, label, sortState, onSort, className }) {
+  const active = sortState.col === col
+  return (
+    <th
+      className={`${className} cursor-pointer select-none hover:text-slate-800 hover:bg-slate-100 transition-colors`}
+      onClick={() => onSort(col)}
+    >
+      {label}
+      <SortArrow active={active} dir={sortState.dir} />
+    </th>
+  )
+}
+
 export default function TransactionsPage() {
   const { year, brands, sellers } = useAppContext()
+  const { user } = useAuth()
+  const canWrite = user?.role === 'admin' || user?.role === 'seller'
 
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('')
@@ -62,6 +104,8 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  const [sort, setSort] = useState({ col: null, dir: null })
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
@@ -79,7 +123,7 @@ export default function TransactionsPage() {
         if (brandFilter) params.brand_id = brandFilter
         if (sellerFilter) params.seller_id = sellerFilter
         if (stageFilter) params.stage_label = stageFilter
-        if (quarterFilter) params.quarter = quarterFilter.toLowerCase()
+        if (quarterFilter) params.quarter = quarterFilter
         if (search) params.search = search
       }
       const data = await getTransactions(params)
@@ -110,6 +154,40 @@ export default function TransactionsPage() {
   async function handleSaved() { closeDrawer(); await fetchTransactions() }
 
   const isLoss = (tx) => tx.status_label === 'LOSS'
+
+  function handleSort(col) {
+    setSort((prev) => {
+      if (prev.col !== col) return { col, dir: 'asc' }
+      if (prev.dir === 'asc') return { col, dir: 'desc' }
+      return { col: null, dir: null }
+    })
+  }
+
+  const SORT_VALUE = {
+    client:   (tx) => (tx.client_name || '').toLowerCase(),
+    brand:    (tx) => (tx.brand_name  || '').toLowerCase(),
+    seller:   (tx) => (tx.seller_name || '').toLowerCase(),
+    tcv:      (tx) => tx.tcv          ?? 0,
+    stage:    (tx) => stagePercent(tx),
+    weighted: (tx) => tx.weighted_total ?? 0,
+    q1:       (tx) => tx.q1_value ?? 0,
+    q2:       (tx) => tx.q2_value ?? 0,
+    q3:       (tx) => tx.q3_value ?? 0,
+    q4:       (tx) => tx.q4_value ?? 0,
+  }
+
+  const displayedTransactions = (() => {
+    if (!sort.col) return transactions
+    const getValue = SORT_VALUE[sort.col]
+    const mul = sort.dir === 'asc' ? 1 : -1
+    return [...transactions].sort((a, b) => {
+      const av = getValue(a)
+      const bv = getValue(b)
+      if (av < bv) return -1 * mul
+      if (av > bv) return  1 * mul
+      return 0
+    })
+  })()
 
   return (
     <div>
@@ -178,15 +256,17 @@ export default function TransactionsPage() {
             </>
           )}
         </p>
-        <button
-          onClick={openNewDrawer}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          New Transaction
-        </button>
+        {canWrite && (
+          <button
+            onClick={openNewDrawer}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            New Transaction
+          </button>
+        )}
       </div>
 
       {/* Table card */}
@@ -215,16 +295,16 @@ export default function TransactionsPage() {
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className={TH}>Client</th>
-                  <th className={TH_SEP}>Brand</th>
-                  <th className={TH_SEP}>Seller</th>
-                  <th className={TH_SEP}>TCV</th>
-                  <th className={TH_SEP}>Stage</th>
-                  <th className={TH_SEP}>Weighted</th>
-                  <th className={TH_SEP}>Q1</th>
-                  <th className={TH_SEP}>Q2</th>
-                  <th className={TH_SEP}>Q3</th>
-                  <th className={TH_SEP}>Q4</th>
+                  <SortableTH col="client"   label="Client"   sortState={sort} onSort={handleSort} className={TH} />
+                  <SortableTH col="brand"    label="Brand"    sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="seller"   label="Seller"   sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="tcv"      label="TCV"      sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="stage"    label="Stage"    sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="weighted" label="Weighted" sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="q1"       label="Q1"       sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="q2"       label="Q2"       sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="q3"       label="Q3"       sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="q4"       label="Q4"       sortState={sort} onSort={handleSort} className={TH_SEP} />
                 </tr>
               </thead>
               <tbody>
@@ -253,7 +333,7 @@ export default function TransactionsPage() {
                           <button onClick={clearFilters} className="text-sm text-blue-600 hover:underline mt-1">
                             Clear filters
                           </button>
-                        ) : (
+                        ) : canWrite ? (
                           <button
                             onClick={openNewDrawer}
                             className="mt-1 flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
@@ -263,23 +343,24 @@ export default function TransactionsPage() {
                             </svg>
                             New Transaction
                           </button>
-                        )}
+                        ) : null}
                       </div>
                     </td>
                   </tr>
                 ) : (
-                  transactions.map((tx, idx) => {
+                  displayedTransactions.map((tx, idx) => {
                     const loss = isLoss(tx)
                     const isOdd = idx % 2 === 1
                     const qCell = 'px-2 py-2 text-xs text-right tabular-nums border-l border-slate-200'
                     return (
                       <tr
                         key={tx.id}
-                        onClick={() => openEditDrawer(tx)}
+                        onClick={canWrite ? () => openEditDrawer(tx) : undefined}
                         className={[
-                          'border-b border-slate-100 last:border-0 transition-colors duration-100 cursor-pointer',
+                          'border-b border-slate-100 last:border-0 transition-colors duration-100',
+                          canWrite ? 'cursor-pointer' : '',
                           loss ? 'bg-slate-50' : isOdd ? 'bg-slate-50/70' : 'bg-white',
-                          'hover:bg-blue-50/50',
+                          canWrite ? 'hover:bg-blue-50/50' : '',
                         ].join(' ')}
                       >
                         <td className={`px-3 py-2 text-sm font-medium ${loss ? 'text-slate-400' : 'text-slate-900'}`}>
