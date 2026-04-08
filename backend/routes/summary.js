@@ -1,38 +1,37 @@
 import { Router } from 'express';
-import db from '../db.js';
+import pool from '../db.js';
 import { STAGE_MAP, deriveTransaction, computeGap } from '../lib/forecast.js';
 
 const router = Router();
 
 // ─── GET /api/brands/:id/summary?year=YYYY ───────────────────────────────────
-router.get('/brands/:id/summary', (req, res) => {
+router.get('/brands/:id/summary', async (req, res) => {
   const brand_id = Number(req.params.id);
   const year     = Number(req.query.year) || new Date().getUTCFullYear();
 
-  const brand = db.prepare('SELECT id, name FROM brands WHERE id = ?').get(brand_id);
+  const { rows: brandRows } = await pool.query('SELECT id, name FROM brands WHERE id = $1', [brand_id]);
+  const brand = brandRows[0];
   if (!brand) return res.status(404).json({ error: 'Brand not found' });
 
-  // Plan
-  const plan = db.prepare('SELECT * FROM plans WHERE brand_id = ? AND year = ?').get(brand_id, year);
+  const { rows: planRows } = await pool.query('SELECT * FROM plans WHERE brand_id = $1 AND year = $2', [brand_id, year]);
+  const plan = planRows[0] ?? null;
   const fy_plan = plan
     ? (plan.q1_plan === null || plan.q2_plan === null || plan.q3_plan === null || plan.q4_plan === null
         ? null
         : plan.q1_plan + plan.q2_plan + plan.q3_plan + plan.q4_plan)
     : null;
 
-  // Active transactions for this brand/year
-  const txRows = db.prepare(`
+  const { rows: txRows } = await pool.query(`
     SELECT t.*, b.name AS brand_name, s.name AS seller_name
     FROM transactions t
     JOIN brands  b ON b.id = t.brand_id
     JOIN sellers s ON s.id = t.seller_id
-    WHERE t.brand_id = ?
+    WHERE t.brand_id = $1
       AND t.deleted_at IS NULL
       AND t.due_date IS NOT NULL
-      AND CAST(strftime('%Y', t.due_date) AS INTEGER) = ?
-  `).all(brand_id, year);
+      AND EXTRACT(YEAR FROM t.due_date::date)::int = $2
+  `, [brand_id, year]);
 
-  // Aggregations
   const qFc  = { q1: 0, q2: 0, q3: 0, q4: 0 };
   const qWon = { q1: 0, q2: 0, q3: 0, q4: 0 };
   const stageAgg = {};
@@ -47,7 +46,6 @@ router.get('/brands/:id/summary', (req, res) => {
       qFc.q2 += wt * tx.allocation_q2;
       qFc.q3 += wt * tx.allocation_q3;
       qFc.q4 += wt * tx.allocation_q4;
-
       stageAgg[tx.stage_label] = (stageAgg[tx.stage_label] ?? 0) + wt;
     }
 
@@ -75,7 +73,6 @@ router.get('/brands/:id/summary', (req, res) => {
     weighted_total,
   }));
 
-  // Top 10 active transactions for this brand (not Won, not LOSS)
   const top_transactions = txRows
     .filter(tx => tx.stage_label !== 'Won' && tx.stage_label !== 'LOSS')
     .map(deriveTransaction)
@@ -97,21 +94,20 @@ router.get('/brands/:id/summary', (req, res) => {
 });
 
 // ─── GET /api/sellers/summary?year=YYYY ─────────────────────────────────────
-router.get('/sellers/summary', (req, res) => {
+router.get('/sellers/summary', async (req, res) => {
   const year = Number(req.query.year) || new Date().getUTCFullYear();
 
-  const sellers = db.prepare('SELECT id, name FROM sellers ORDER BY name ASC').all();
+  const { rows: sellers } = await pool.query('SELECT id, name FROM sellers ORDER BY name ASC');
 
-  const txRows = db.prepare(`
+  const { rows: txRows } = await pool.query(`
     SELECT t.seller_id, t.tcv, t.stage_label,
            t.allocation_q1, t.allocation_q2, t.allocation_q3, t.allocation_q4
     FROM transactions t
     WHERE t.deleted_at IS NULL
       AND t.due_date IS NOT NULL
-      AND CAST(strftime('%Y', t.due_date) AS INTEGER) = ?
-  `).all(year);
+      AND EXTRACT(YEAR FROM t.due_date::date)::int = $1
+  `, [year]);
 
-  // Aggregate per seller
   const agg = {};
   for (const tx of txRows) {
     const isLoss = tx.stage_label === 'LOSS';
@@ -134,7 +130,6 @@ router.get('/sellers/summary', (req, res) => {
     }
   }
 
-  // Total forecast for contribution_pct
   const total_forecast = Object.values(agg).reduce((sum, s) => sum + s.weighted_forecast, 0);
 
   const result = sellers.map(seller => {

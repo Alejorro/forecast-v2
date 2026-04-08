@@ -1,25 +1,21 @@
 import { Router } from 'express';
-import db from '../db.js';
+import pool from '../db.js';
 import { STAGE_MAP, computeGap } from '../lib/forecast.js';
 
 const router = Router();
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/**
- * Compute forecast for a brand/year/quarter from transactions.
- * Returns weighted_total sum for active non-deleted transactions.
- */
-function forecastForBrandYear(brand_id, year) {
-  const rows = db.prepare(`
+async function forecastForBrandYear(brand_id, year) {
+  const { rows } = await pool.query(`
     SELECT tcv, stage_label,
            allocation_q1, allocation_q2, allocation_q3, allocation_q4
     FROM transactions
-    WHERE brand_id = ?
-      AND CAST(strftime('%Y', due_date) AS INTEGER) = ?
+    WHERE brand_id = $1
+      AND EXTRACT(YEAR FROM due_date::date)::int = $2
       AND deleted_at IS NULL
       AND stage_label != 'LOSS'
-  `).all(Number(brand_id), Number(year));
+  `, [brand_id, year]);
 
   const result = { q1: 0, q2: 0, q3: 0, q4: 0 };
   for (const r of rows) {
@@ -34,10 +30,6 @@ function forecastForBrandYear(brand_id, year) {
   return result;
 }
 
-/**
- * Compute fy_plan from a plan row.
- * If any quarter is null → fy_plan = null.
- */
 function fyPlan(plan) {
   if (!plan) return null;
   const { q1_plan, q2_plan, q3_plan, q4_plan } = plan;
@@ -48,45 +40,47 @@ function fyPlan(plan) {
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 // GET /api/plans?year=YYYY
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const year = Number(req.query.year) || new Date().getUTCFullYear();
 
-  const brands = db.prepare('SELECT id, name FROM brands ORDER BY name ASC').all();
-  const planRows = db.prepare('SELECT * FROM plans WHERE year = ?').all(year);
+  const { rows: brands }   = await pool.query('SELECT id, name FROM brands ORDER BY name ASC');
+  const { rows: planRows } = await pool.query('SELECT * FROM plans WHERE year = $1', [year]);
   const planByBrand = Object.fromEntries(planRows.map(p => [p.brand_id, p]));
 
-  const result = brands.map(brand => {
+  const result = await Promise.all(brands.map(async brand => {
     const plan = planByBrand[brand.id] || null;
-    const fc   = forecastForBrandYear(brand.id, year);
+    const fc   = await forecastForBrandYear(brand.id, year);
     const fy   = fyPlan(plan);
 
     return {
-      brand_id:         brand.id,
-      brand_name:       brand.name,
+      brand_id:    brand.id,
+      brand_name:  brand.name,
       year,
-      q1_plan:          plan?.q1_plan ?? null,
-      q2_plan:          plan?.q2_plan ?? null,
-      q3_plan:          plan?.q3_plan ?? null,
-      q4_plan:          plan?.q4_plan ?? null,
-      fy_plan:          fy,
-      fy_forecast:      fc.fy,
-      fy_gap:           computeGap(fy, fc.fy),
+      q1_plan:     plan?.q1_plan ?? null,
+      q2_plan:     plan?.q2_plan ?? null,
+      q3_plan:     plan?.q3_plan ?? null,
+      q4_plan:     plan?.q4_plan ?? null,
+      fy_plan:     fy,
+      fy_forecast: fc.fy,
+      fy_gap:      computeGap(fy, fc.fy),
     };
-  });
+  }));
 
   res.json(result);
 });
 
 // GET /api/plans/:brand_id?year=YYYY
-router.get('/:brand_id', (req, res) => {
+router.get('/:brand_id', async (req, res) => {
   const brand_id = Number(req.params.brand_id);
   const year     = Number(req.query.year) || new Date().getUTCFullYear();
 
-  const brand = db.prepare('SELECT id, name FROM brands WHERE id = ?').get(brand_id);
+  const { rows: brandRows } = await pool.query('SELECT id, name FROM brands WHERE id = $1', [brand_id]);
+  const brand = brandRows[0];
   if (!brand) return res.status(404).json({ error: 'Brand not found' });
 
-  const plan = db.prepare('SELECT * FROM plans WHERE brand_id = ? AND year = ?').get(brand_id, year);
-  const fc   = forecastForBrandYear(brand_id, year);
+  const { rows: planRows } = await pool.query('SELECT * FROM plans WHERE brand_id = $1 AND year = $2', [brand_id, year]);
+  const plan = planRows[0] ?? null;
+  const fc   = await forecastForBrandYear(brand_id, year);
   const fy   = fyPlan(plan);
 
   res.json({
@@ -99,30 +93,10 @@ router.get('/:brand_id', (req, res) => {
     q4_plan:     plan?.q4_plan ?? null,
     fy_plan:     fy,
     quarterly_breakdown: [
-      {
-        quarter:  1,
-        plan:     plan?.q1_plan ?? null,
-        forecast: fc.q1,
-        gap:      computeGap(plan?.q1_plan ?? null, fc.q1),
-      },
-      {
-        quarter:  2,
-        plan:     plan?.q2_plan ?? null,
-        forecast: fc.q2,
-        gap:      computeGap(plan?.q2_plan ?? null, fc.q2),
-      },
-      {
-        quarter:  3,
-        plan:     plan?.q3_plan ?? null,
-        forecast: fc.q3,
-        gap:      computeGap(plan?.q3_plan ?? null, fc.q3),
-      },
-      {
-        quarter:  4,
-        plan:     plan?.q4_plan ?? null,
-        forecast: fc.q4,
-        gap:      computeGap(plan?.q4_plan ?? null, fc.q4),
-      },
+      { quarter: 1, plan: plan?.q1_plan ?? null, forecast: fc.q1, gap: computeGap(plan?.q1_plan ?? null, fc.q1) },
+      { quarter: 2, plan: plan?.q2_plan ?? null, forecast: fc.q2, gap: computeGap(plan?.q2_plan ?? null, fc.q2) },
+      { quarter: 3, plan: plan?.q3_plan ?? null, forecast: fc.q3, gap: computeGap(plan?.q3_plan ?? null, fc.q3) },
+      { quarter: 4, plan: plan?.q4_plan ?? null, forecast: fc.q4, gap: computeGap(plan?.q4_plan ?? null, fc.q4) },
     ],
     fy_forecast: fc.fy,
     fy_gap:      computeGap(fy, fc.fy),
@@ -130,12 +104,12 @@ router.get('/:brand_id', (req, res) => {
 });
 
 // PUT /api/plans/:brand_id — upsert
-router.put('/:brand_id', (req, res) => {
+router.put('/:brand_id', async (req, res) => {
   const brand_id = Number(req.params.brand_id);
   const body     = req.body;
 
-  const brand = db.prepare('SELECT id FROM brands WHERE id = ?').get(brand_id);
-  if (!brand) return res.status(404).json({ error: 'Brand not found' });
+  const { rows: brandRows } = await pool.query('SELECT id FROM brands WHERE id = $1', [brand_id]);
+  if (!brandRows[0]) return res.status(404).json({ error: 'Brand not found' });
 
   if (!body.year) return res.status(400).json({ error: 'year is required' });
 
@@ -145,19 +119,20 @@ router.put('/:brand_id', (req, res) => {
   const q3_plan = body.q3_plan !== undefined ? (body.q3_plan === null ? null : Number(body.q3_plan)) : null;
   const q4_plan = body.q4_plan !== undefined ? (body.q4_plan === null ? null : Number(body.q4_plan)) : null;
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO plans (year, brand_id, q1_plan, q2_plan, q3_plan, q4_plan)
-    VALUES (@year, @brand_id, @q1_plan, @q2_plan, @q3_plan, @q4_plan)
-    ON CONFLICT(year, brand_id) DO UPDATE SET
-      q1_plan = excluded.q1_plan,
-      q2_plan = excluded.q2_plan,
-      q3_plan = excluded.q3_plan,
-      q4_plan = excluded.q4_plan
-  `).run({ year, brand_id, q1_plan, q2_plan, q3_plan, q4_plan });
+    VALUES ($1, $2, $3, $4, $5, $6)
+    ON CONFLICT (year, brand_id) DO UPDATE SET
+      q1_plan = EXCLUDED.q1_plan,
+      q2_plan = EXCLUDED.q2_plan,
+      q3_plan = EXCLUDED.q3_plan,
+      q4_plan = EXCLUDED.q4_plan
+  `, [year, brand_id, q1_plan, q2_plan, q3_plan, q4_plan]);
 
-  const updated = db.prepare('SELECT * FROM plans WHERE brand_id = ? AND year = ?').get(brand_id, year);
+  const { rows: updatedRows } = await pool.query('SELECT * FROM plans WHERE brand_id = $1 AND year = $2', [brand_id, year]);
+  const updated = updatedRows[0];
   const fy      = fyPlan(updated);
-  const fc      = forecastForBrandYear(brand_id, year);
+  const fc      = await forecastForBrandYear(brand_id, year);
 
   res.json({
     brand_id,

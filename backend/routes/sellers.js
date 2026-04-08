@@ -1,12 +1,12 @@
 import { Router } from 'express';
-import db from '../db.js';
+import pool from '../db.js';
 
 const router = Router();
 
 // GET /api/sellers — list all sellers
-router.get('/', (req, res) => {
-  const sellers = db.prepare('SELECT id, name FROM sellers ORDER BY name ASC').all();
-  res.json(sellers);
+router.get('/', async (req, res) => {
+  const { rows } = await pool.query('SELECT id, name FROM sellers ORDER BY name ASC');
+  res.json(rows);
 });
 
 export default router;

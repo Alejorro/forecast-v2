@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import db from '../db.js';
+import pool from '../db.js';
 import {
   deriveTransaction,
   validateStageLabel,
@@ -22,31 +22,29 @@ function buildListQuery(params) {
 
   if (year) {
     if (include_loss === 'true') {
-      // LOSS transactions may have no due_date — include them regardless of year
-      conditions.push("(t.due_date IS NULL OR CAST(strftime('%Y', t.due_date) AS INTEGER) = ?)");
+      conditions.push(`(t.due_date IS NULL OR EXTRACT(YEAR FROM t.due_date::date)::int = $${bindings.length + 1})`);
     } else {
-      conditions.push("CAST(strftime('%Y', t.due_date) AS INTEGER) = ?");
+      conditions.push(`EXTRACT(YEAR FROM t.due_date::date)::int = $${bindings.length + 1}`);
     }
     bindings.push(Number(year));
   }
 
   if (brand_id) {
-    conditions.push('t.brand_id = ?');
+    conditions.push(`t.brand_id = $${bindings.length + 1}`);
     bindings.push(Number(brand_id));
   }
 
   if (seller_id) {
-    conditions.push('t.seller_id = ?');
+    conditions.push(`t.seller_id = $${bindings.length + 1}`);
     bindings.push(Number(seller_id));
   }
 
   if (stage_label) {
-    conditions.push('t.stage_label = ?');
+    conditions.push(`t.stage_label = $${bindings.length + 1}`);
     bindings.push(stage_label);
   }
 
   if (quarter) {
-    // Accept both numeric (1-4) and string (Q1-Q4, 1Q-4Q) forms
     const q = String(quarter).trim();
     if (q === 'Q1' || q === '1') conditions.push('t.allocation_q1 > 0');
     else if (q === 'Q2' || q === '2') conditions.push('t.allocation_q2 > 0');
@@ -62,7 +60,7 @@ function buildListQuery(params) {
   }
 
   if (search) {
-    conditions.push('(t.client_name LIKE ? OR t.project_name LIKE ?)');
+    conditions.push(`(t.client_name ILIKE $${bindings.length + 1} OR t.project_name ILIKE $${bindings.length + 2})`);
     const pattern = `%${search}%`;
     bindings.push(pattern, pattern);
   }
@@ -71,19 +69,12 @@ function buildListQuery(params) {
   return { where, bindings };
 }
 
-/**
- * Resolves allocations from a request body.
- * If `quarter` field is provided, derive allocations from it.
- * Otherwise fall back to explicit allocation_qN fields (legacy / manual override).
- * Returns { allocation_q1, allocation_q2, allocation_q3, allocation_q4 } or null on error.
- */
 function resolveAllocations(body) {
   if (body.quarter) {
     const alloc = quarterToAllocations(body.quarter);
     if (!alloc) return { error: `Invalid quarter "${body.quarter}". Must be one of: Q1, Q2, Q3, Q4, 1Q-4Q` };
     return alloc;
   }
-  // Explicit allocations provided directly
   return {
     allocation_q1: body.allocation_q1 ?? 0,
     allocation_q2: body.allocation_q2 ?? 0,
@@ -92,70 +83,64 @@ function resolveAllocations(body) {
   };
 }
 
-/**
- * For seller role: look up their seller_id from the DB and verify the
- * submitted seller_id matches. Returns an error string or null.
- */
-function enforceSellerIdentity(user, submittedSellerId) {
-  if (!user || user.role !== 'seller') return null; // admin passes through
+async function enforceSellerIdentity(user, submittedSellerId) {
+  if (!user || user.role !== 'seller') return null;
 
-  const row = db.prepare('SELECT id FROM sellers WHERE name_normalized = ?')
-    .get(user.sellerName.toLowerCase().trim());
+  const { rows } = await pool.query(
+    'SELECT id FROM sellers WHERE name_normalized = $1',
+    [user.sellerName.toLowerCase().trim()]
+  );
 
-  if (!row) {
+  if (!rows[0]) {
     return `Seller account not found in database for: ${user.sellerName}`;
   }
 
-  if (Number(submittedSellerId) !== row.id) {
+  if (Number(submittedSellerId) !== rows[0].id) {
     return 'You can only create transactions under your own seller identity';
   }
 
   return null;
 }
 
+const TX_SELECT = `
+  SELECT t.*, b.name AS brand_name, s.name AS seller_name
+  FROM transactions t
+  JOIN brands  b ON b.id = t.brand_id
+  JOIN sellers s ON s.id = t.seller_id
+`;
+
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 // GET /api/transactions
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { where, bindings } = buildListQuery(req.query);
 
-  const rows = db.prepare(`
-    SELECT t.*,
-           b.name AS brand_name,
-           s.name AS seller_name
-    FROM transactions t
-    JOIN brands  b ON b.id = t.brand_id
-    JOIN sellers s ON s.id = t.seller_id
+  const { rows } = await pool.query(`
+    ${TX_SELECT}
     ${where}
     ORDER BY t.created_at DESC
-  `).all(...bindings);
+  `, bindings);
 
   res.json(rows.map(deriveTransaction));
 });
 
 // GET /api/transactions/:id
-router.get('/:id', (req, res) => {
-  const row = db.prepare(`
-    SELECT t.*,
-           b.name AS brand_name,
-           s.name AS seller_name
-    FROM transactions t
-    JOIN brands  b ON b.id = t.brand_id
-    JOIN sellers s ON s.id = t.seller_id
-    WHERE t.id = ? AND t.deleted_at IS NULL
-  `).get(Number(req.params.id));
+router.get('/:id', async (req, res) => {
+  const { rows } = await pool.query(`
+    ${TX_SELECT}
+    WHERE t.id = $1 AND t.deleted_at IS NULL
+  `, [Number(req.params.id)]);
 
-  if (!row) return res.status(404).json({ error: 'Transaction not found' });
-  res.json(deriveTransaction(row));
+  if (!rows[0]) return res.status(404).json({ error: 'Transaction not found' });
+  res.json(deriveTransaction(rows[0]));
 });
 
 // POST /api/transactions
-router.post('/', requireWrite, (req, res) => {
+router.post('/', requireWrite, async (req, res) => {
   const body = req.body;
   const isLossRow = body.stage_label === 'LOSS';
 
-  // Sellers can only create transactions under their own identity
-  const sellerErr = enforceSellerIdentity(req.user, body.seller_id);
+  const sellerErr = await enforceSellerIdentity(req.user, body.seller_id);
   if (sellerErr) return res.status(403).json({ error: sellerErr });
 
   if (!body.client_name) return res.status(400).json({ error: 'client_name is required' });
@@ -171,7 +156,7 @@ router.post('/', requireWrite, (req, res) => {
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
-    const result = db.prepare(`
+    const { rows: inserted } = await pool.query(`
       INSERT INTO transactions (
         client_name, project_name, seller_id, brand_id,
         sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
@@ -179,40 +164,31 @@ router.post('/', requireWrite, (req, res) => {
         allocation_q1, allocation_q2, allocation_q3, allocation_q4,
         description, invoice_number, notes
       ) VALUES (
-        @client_name, @project_name, @seller_id, @brand_id,
-        @sub_brand, @vendor_name, @opportunity_odoo, @brand_opportunity_number,
-        @due_date, 'LOSS', 'LOSS', @tcv,
+        $1, $2, $3, $4, $5, $6, $7, $8,
+        $9, 'LOSS', 'LOSS', $10,
         0, 0, 0, 0,
-        @description, @invoice_number, @notes
-      )
-    `).run({
-      client_name:              body.client_name,
-      project_name:             body.project_name             ?? null,
-      seller_id:                Number(body.seller_id),
-      brand_id:                 Number(body.brand_id),
-      sub_brand:                body.sub_brand                ?? null,
-      vendor_name:              body.vendor_name              ?? null,
-      opportunity_odoo:         body.opportunity_odoo         ?? null,
-      brand_opportunity_number: body.brand_opportunity_number ?? null,
-      due_date:                 body.due_date                 ?? null,
+        $11, $12, $13
+      ) RETURNING id
+    `, [
+      body.client_name,
+      body.project_name             ?? null,
+      Number(body.seller_id),
+      Number(body.brand_id),
+      body.sub_brand                ?? null,
+      body.vendor_name              ?? null,
+      body.opportunity_odoo         ?? null,
+      body.brand_opportunity_number ?? null,
+      body.due_date                 ?? null,
       tcv,
-      description:              body.description              ?? null,
-      invoice_number:           body.invoice_number           ?? null,
-      notes:                    body.notes                    ?? null,
-    });
+      body.description              ?? null,
+      body.invoice_number           ?? null,
+      body.notes                    ?? null,
+    ]);
 
-    const created = db.prepare(`
-      SELECT t.*, b.name AS brand_name, s.name AS seller_name
-      FROM transactions t
-      JOIN brands  b ON b.id = t.brand_id
-      JOIN sellers s ON s.id = t.seller_id
-      WHERE t.id = ?
-    `).get(result.lastInsertRowid);
-
-    return res.status(201).json(deriveTransaction(created));
+    const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
+    return res.status(201).json(deriveTransaction(created[0]));
   }
 
-  // Active deal: strict validation
   if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
 
   const allocResult = resolveAllocations(body);
@@ -227,7 +203,7 @@ router.post('/', requireWrite, (req, res) => {
     }
   }
 
-  const result = db.prepare(`
+  const { rows: inserted } = await pool.query(`
     INSERT INTO transactions (
       client_name, project_name, seller_id, brand_id,
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
@@ -235,49 +211,43 @@ router.post('/', requireWrite, (req, res) => {
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
       description, invoice_number, notes
     ) VALUES (
-      @client_name, @project_name, @seller_id, @brand_id,
-      @sub_brand, @vendor_name, @opportunity_odoo, @brand_opportunity_number,
-      @due_date, @stage_label, @tcv,
-      @allocation_q1, @allocation_q2, @allocation_q3, @allocation_q4,
-      @description, @invoice_number, @notes
-    )
-  `).run({
-    client_name:              body.client_name,
-    project_name:             body.project_name             ?? null,
-    seller_id:                Number(body.seller_id),
-    brand_id:                 Number(body.brand_id),
-    sub_brand:                body.sub_brand                ?? null,
-    vendor_name:              body.vendor_name              ?? null,
-    opportunity_odoo:         body.opportunity_odoo         ?? null,
-    brand_opportunity_number: body.brand_opportunity_number ?? null,
-    due_date:                 body.due_date                 ?? null,
-    stage_label:              body.stage_label,
-    tcv:                      Number(body.tcv),
-    allocation_q1:            Number(allocation_q1),
-    allocation_q2:            Number(allocation_q2),
-    allocation_q3:            Number(allocation_q3),
-    allocation_q4:            Number(allocation_q4),
-    description:              body.description              ?? null,
-    invoice_number:           body.invoice_number           ?? null,
-    notes:                    body.notes                    ?? null,
-  });
+      $1, $2, $3, $4, $5, $6, $7, $8,
+      $9, $10, $11,
+      $12, $13, $14, $15,
+      $16, $17, $18
+    ) RETURNING id
+  `, [
+    body.client_name,
+    body.project_name             ?? null,
+    Number(body.seller_id),
+    Number(body.brand_id),
+    body.sub_brand                ?? null,
+    body.vendor_name              ?? null,
+    body.opportunity_odoo         ?? null,
+    body.brand_opportunity_number ?? null,
+    body.due_date                 ?? null,
+    body.stage_label,
+    Number(body.tcv),
+    Number(allocation_q1),
+    Number(allocation_q2),
+    Number(allocation_q3),
+    Number(allocation_q4),
+    body.description              ?? null,
+    body.invoice_number           ?? null,
+    body.notes                    ?? null,
+  ]);
 
-  const created = db.prepare(`
-    SELECT t.*, b.name AS brand_name, s.name AS seller_name
-    FROM transactions t
-    JOIN brands  b ON b.id = t.brand_id
-    JOIN sellers s ON s.id = t.seller_id
-    WHERE t.id = ?
-  `).get(result.lastInsertRowid);
-
-  res.status(201).json(deriveTransaction(created));
+  const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
+  res.status(201).json(deriveTransaction(created[0]));
 });
 
 // PUT /api/transactions/:id — admin only
-router.put('/:id', requireAdmin, (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare('SELECT id FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
-  if (!existing) return res.status(404).json({ error: 'Transaction not found' });
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+  );
+  if (!existing[0]) return res.status(404).json({ error: 'Transaction not found' });
 
   const body = req.body;
   const isLossRow = body.stage_label === 'LOSS';
@@ -295,58 +265,50 @@ router.put('/:id', requireAdmin, (req, res) => {
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
-    db.prepare(`
+    await pool.query(`
       UPDATE transactions SET
-        client_name              = @client_name,
-        project_name             = @project_name,
-        seller_id                = @seller_id,
-        brand_id                 = @brand_id,
-        sub_brand                = @sub_brand,
-        vendor_name              = @vendor_name,
-        opportunity_odoo         = @opportunity_odoo,
-        brand_opportunity_number = @brand_opportunity_number,
-        due_date                 = @due_date,
+        client_name              = $1,
+        project_name             = $2,
+        seller_id                = $3,
+        brand_id                 = $4,
+        sub_brand                = $5,
+        vendor_name              = $6,
+        opportunity_odoo         = $7,
+        brand_opportunity_number = $8,
+        due_date                 = $9,
         stage_label              = 'LOSS',
         status_label             = 'LOSS',
-        tcv                      = @tcv,
+        tcv                      = $10,
         allocation_q1            = 0,
         allocation_q2            = 0,
         allocation_q3            = 0,
         allocation_q4            = 0,
-        description              = @description,
-        invoice_number           = @invoice_number,
-        notes                    = @notes,
-        updated_at               = datetime('now')
-      WHERE id = @id
-    `).run({
-      id,
-      client_name:              body.client_name,
-      project_name:             body.project_name             ?? null,
-      seller_id:                Number(body.seller_id),
-      brand_id:                 Number(body.brand_id),
-      sub_brand:                body.sub_brand                ?? null,
-      vendor_name:              body.vendor_name              ?? null,
-      opportunity_odoo:         body.opportunity_odoo         ?? null,
-      brand_opportunity_number: body.brand_opportunity_number ?? null,
-      due_date:                 body.due_date                 ?? null,
+        description              = $11,
+        invoice_number           = $12,
+        notes                    = $13,
+        updated_at               = NOW()
+      WHERE id = $14
+    `, [
+      body.client_name,
+      body.project_name             ?? null,
+      Number(body.seller_id),
+      Number(body.brand_id),
+      body.sub_brand                ?? null,
+      body.vendor_name              ?? null,
+      body.opportunity_odoo         ?? null,
+      body.brand_opportunity_number ?? null,
+      body.due_date                 ?? null,
       tcv,
-      description:              body.description              ?? null,
-      invoice_number:           body.invoice_number           ?? null,
-      notes:                    body.notes                    ?? null,
-    });
+      body.description              ?? null,
+      body.invoice_number           ?? null,
+      body.notes                    ?? null,
+      id,
+    ]);
 
-    const updated = db.prepare(`
-      SELECT t.*, b.name AS brand_name, s.name AS seller_name
-      FROM transactions t
-      JOIN brands  b ON b.id = t.brand_id
-      JOIN sellers s ON s.id = t.seller_id
-      WHERE t.id = ?
-    `).get(id);
-
-    return res.json(deriveTransaction(updated));
+    const { rows: updated } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [id]);
+    return res.json(deriveTransaction(updated[0]));
   }
 
-  // Active deal: strict validation
   if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
 
   const allocResult = resolveAllocations(body);
@@ -361,82 +323,82 @@ router.put('/:id', requireAdmin, (req, res) => {
     }
   }
 
-  db.prepare(`
+  await pool.query(`
     UPDATE transactions SET
-      client_name              = @client_name,
-      project_name             = @project_name,
-      seller_id                = @seller_id,
-      brand_id                 = @brand_id,
-      sub_brand                = @sub_brand,
-      vendor_name              = @vendor_name,
-      opportunity_odoo         = @opportunity_odoo,
-      brand_opportunity_number = @brand_opportunity_number,
-      due_date                 = @due_date,
-      stage_label              = @stage_label,
-      tcv                      = @tcv,
-      allocation_q1            = @allocation_q1,
-      allocation_q2            = @allocation_q2,
-      allocation_q3            = @allocation_q3,
-      allocation_q4            = @allocation_q4,
-      description              = @description,
-      invoice_number           = @invoice_number,
-      notes                    = @notes,
-      updated_at               = datetime('now')
-    WHERE id = @id
-  `).run({
+      client_name              = $1,
+      project_name             = $2,
+      seller_id                = $3,
+      brand_id                 = $4,
+      sub_brand                = $5,
+      vendor_name              = $6,
+      opportunity_odoo         = $7,
+      brand_opportunity_number = $8,
+      due_date                 = $9,
+      stage_label              = $10,
+      tcv                      = $11,
+      allocation_q1            = $12,
+      allocation_q2            = $13,
+      allocation_q3            = $14,
+      allocation_q4            = $15,
+      description              = $16,
+      invoice_number           = $17,
+      notes                    = $18,
+      updated_at               = NOW()
+    WHERE id = $19
+  `, [
+    body.client_name,
+    body.project_name             ?? null,
+    Number(body.seller_id),
+    Number(body.brand_id),
+    body.sub_brand                ?? null,
+    body.vendor_name              ?? null,
+    body.opportunity_odoo         ?? null,
+    body.brand_opportunity_number ?? null,
+    body.due_date                 ?? null,
+    body.stage_label,
+    Number(body.tcv),
+    Number(allocation_q1),
+    Number(allocation_q2),
+    Number(allocation_q3),
+    Number(allocation_q4),
+    body.description              ?? null,
+    body.invoice_number           ?? null,
+    body.notes                    ?? null,
     id,
-    client_name:              body.client_name,
-    project_name:             body.project_name             ?? null,
-    seller_id:                Number(body.seller_id),
-    brand_id:                 Number(body.brand_id),
-    sub_brand:                body.sub_brand                ?? null,
-    vendor_name:              body.vendor_name              ?? null,
-    opportunity_odoo:         body.opportunity_odoo         ?? null,
-    brand_opportunity_number: body.brand_opportunity_number ?? null,
-    due_date:                 body.due_date                 ?? null,
-    stage_label:              body.stage_label,
-    tcv:                      Number(body.tcv),
-    allocation_q1:            Number(allocation_q1),
-    allocation_q2:            Number(allocation_q2),
-    allocation_q3:            Number(allocation_q3),
-    allocation_q4:            Number(allocation_q4),
-    description:              body.description              ?? null,
-    invoice_number:           body.invoice_number           ?? null,
-    notes:                    body.notes                    ?? null,
-  });
+  ]);
 
-  const updated = db.prepare(`
-    SELECT t.*, b.name AS brand_name, s.name AS seller_name
-    FROM transactions t
-    JOIN brands  b ON b.id = t.brand_id
-    JOIN sellers s ON s.id = t.seller_id
-    WHERE t.id = ?
-  `).get(id);
-
-  res.json(deriveTransaction(updated));
+  const { rows: updated } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [id]);
+  res.json(deriveTransaction(updated[0]));
 });
 
 // DELETE /api/transactions/:id — soft delete, admin only
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare('SELECT id FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
-  if (!existing) return res.status(404).json({ error: 'Transaction not found' });
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+  );
+  if (!existing[0]) return res.status(404).json({ error: 'Transaction not found' });
 
-  db.prepare("UPDATE transactions SET deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(id);
+  await pool.query(
+    'UPDATE transactions SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1', [id]
+  );
   res.json({ ok: true });
 });
 
 // POST /api/transactions/:id/duplicate — clone transaction
-router.post('/:id/duplicate', requireWrite, (req, res) => {
+router.post('/:id/duplicate', requireWrite, async (req, res) => {
   const id = Number(req.params.id);
-  const original = db.prepare('SELECT * FROM transactions WHERE id = ? AND deleted_at IS NULL').get(id);
-  if (!original) return res.status(404).json({ error: 'Transaction not found' });
+  const { rows: origRows } = await pool.query(
+    'SELECT * FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+  );
+  if (!origRows[0]) return res.status(404).json({ error: 'Transaction not found' });
 
-  // Sellers can only duplicate transactions that belong to themselves
-  const sellerErr = enforceSellerIdentity(req.user, original.seller_id);
+  const original = origRows[0];
+
+  const sellerErr = await enforceSellerIdentity(req.user, original.seller_id);
   if (sellerErr) return res.status(403).json({ error: sellerErr });
 
-  const result = db.prepare(`
+  const { rows: inserted } = await pool.query(`
     INSERT INTO transactions (
       client_name, project_name, seller_id, brand_id,
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
@@ -444,42 +406,34 @@ router.post('/:id/duplicate', requireWrite, (req, res) => {
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
       description, invoice_number, notes
     ) VALUES (
-      @client_name, @project_name, @seller_id, @brand_id,
-      @sub_brand, @vendor_name, @opportunity_odoo, @brand_opportunity_number,
-      @due_date, @stage_label, @tcv,
-      @allocation_q1, @allocation_q2, @allocation_q3, @allocation_q4,
-      @description, @invoice_number, @notes
-    )
-  `).run({
-    client_name:              original.client_name,
-    project_name:             original.project_name,
-    seller_id:                original.seller_id,
-    brand_id:                 original.brand_id,
-    sub_brand:                original.sub_brand,
-    vendor_name:              original.vendor_name,
-    opportunity_odoo:         original.opportunity_odoo,
-    brand_opportunity_number: original.brand_opportunity_number,
-    due_date:                 original.due_date,
-    stage_label:              original.stage_label,
-    tcv:                      original.tcv,
-    allocation_q1:            original.allocation_q1,
-    allocation_q2:            original.allocation_q2,
-    allocation_q3:            original.allocation_q3,
-    allocation_q4:            original.allocation_q4,
-    description:              original.description,
-    invoice_number:           original.invoice_number,
-    notes:                    original.notes,
-  });
+      $1, $2, $3, $4, $5, $6, $7, $8,
+      $9, $10, $11,
+      $12, $13, $14, $15,
+      $16, $17, $18
+    ) RETURNING id
+  `, [
+    original.client_name,
+    original.project_name,
+    original.seller_id,
+    original.brand_id,
+    original.sub_brand,
+    original.vendor_name,
+    original.opportunity_odoo,
+    original.brand_opportunity_number,
+    original.due_date,
+    original.stage_label,
+    original.tcv,
+    original.allocation_q1,
+    original.allocation_q2,
+    original.allocation_q3,
+    original.allocation_q4,
+    original.description,
+    original.invoice_number,
+    original.notes,
+  ]);
 
-  const cloned = db.prepare(`
-    SELECT t.*, b.name AS brand_name, s.name AS seller_name
-    FROM transactions t
-    JOIN brands  b ON b.id = t.brand_id
-    JOIN sellers s ON s.id = t.seller_id
-    WHERE t.id = ?
-  `).get(result.lastInsertRowid);
-
-  res.status(201).json(deriveTransaction(cloned));
+  const { rows: cloned } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
+  res.status(201).json(deriveTransaction(cloned[0]));
 });
 
 export default router;

@@ -2,8 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
 
-// Initialize DB (runs schema on first start)
-import './db.js';
+import { initDb } from './db.js';
 
 import brandsRouter       from './routes/brands.js';
 import sellersRouter      from './routes/sellers.js';
@@ -23,7 +22,12 @@ app.set('etag', false);
 // ─── Middleware ──────────────────────────────────────────────────────────────
 
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:5173',
+    'https://forecast.dot4sa.com.ar',
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   credentials: true,
@@ -38,7 +42,8 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure:   process.env.NODE_ENV === 'production',
     maxAge:   8 * 60 * 60 * 1000, // 8 hours
   },
 }));
@@ -85,6 +90,13 @@ app.use((err, _req, res, _next) => {
 
 // ─── Start ───────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`Forecast V2 backend running on http://localhost:${PORT}`);
-});
+initDb()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Forecast V2 backend running on http://localhost:${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });

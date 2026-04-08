@@ -83,8 +83,9 @@
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { dirname, resolve } from 'path';
-import Database from 'better-sqlite3';
+import pg from 'pg';
 
+const { Pool } = pg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require   = createRequire(import.meta.url);
 const XLSX      = require(resolve(__dirname, '../node_modules/xlsx/xlsx.js'));
@@ -95,9 +96,14 @@ const args    = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
 const CLEAR   = args.includes('--clear');
 const xlsxArg = args.find(a => !a.startsWith('--'));
-const XLSX_PATH  = xlsxArg ? resolve(xlsxArg) : resolve(__dirname, '../DATADOT.xlsx');
-const DB_PATH    = resolve(__dirname, '../forecast.db');
-const YEAR       = 2026;
+const XLSX_PATH = xlsxArg ? resolve(xlsxArg) : resolve(__dirname, '../DATADOT.xlsx');
+const YEAR      = 2026;
+
+if (!process.env.DATABASE_URL) {
+  console.error('ERROR: DATABASE_URL environment variable is required.');
+  console.error('  Example: DATABASE_URL=postgresql://... node scripts/import-datadot.js');
+  process.exit(1);
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -429,59 +435,30 @@ function parseLossTransactions(rows) {
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 
-function upsertBrand(db, name) {
-  db.prepare('INSERT OR IGNORE INTO brands (name) VALUES (?)').run(name);
-  return db.prepare('SELECT id FROM brands WHERE name = ?').get(name).id;
-}
-
 function normalizeSeller(name) {
   return String(name || '').trim().toLowerCase();
 }
 
-function upsertSeller(db, name) {
+async function upsertBrand(pool, name) {
+  await pool.query(
+    'INSERT INTO brands (name) VALUES ($1) ON CONFLICT (name) DO NOTHING',
+    [name]
+  );
+  const { rows } = await pool.query('SELECT id FROM brands WHERE name = $1', [name]);
+  return rows[0].id;
+}
+
+async function upsertSeller(pool, name) {
   const normalized = normalizeSeller(name);
-  const existing = db.prepare('SELECT id FROM sellers WHERE name_normalized = ?').get(normalized);
-  if (existing) return existing.id;
-  const result = db.prepare('INSERT INTO sellers (name, name_normalized) VALUES (?, ?)').run(name, normalized);
-  return result.lastInsertRowid;
-}
-
-function mergeDuplicateSellers(db) {
-  const groups = db.prepare(`
-    SELECT name_normalized, MIN(id) AS keep_id
-    FROM sellers
-    GROUP BY name_normalized
-    HAVING COUNT(*) > 1
-  `).all();
-
-  for (const g of groups) {
-    const losers = db.prepare(
-      'SELECT id FROM sellers WHERE name_normalized = ? AND id != ?'
-    ).all(g.name_normalized, g.keep_id);
-
-    for (const loser of losers) {
-      db.prepare('UPDATE transactions SET seller_id = ? WHERE seller_id = ?').run(g.keep_id, loser.id);
-      db.prepare('DELETE FROM sellers WHERE id = ?').run(loser.id);
-    }
-  }
-
-  return groups.length;
-}
-
-function ensureSellerNormalized(db) {
-  const cols = db.prepare('PRAGMA table_info(sellers)').all();
-  const hasNormalized = cols.some(c => c.name === 'name_normalized');
-
-  if (!hasNormalized) {
-    db.exec('ALTER TABLE sellers ADD COLUMN name_normalized TEXT');
-    db.prepare('UPDATE sellers SET name_normalized = lower(trim(name))').run();
-    const merged = mergeDuplicateSellers(db);
-    if (merged > 0) {
-      console.log(`  [migration] Merged ${merged} duplicate seller group(s).`);
-    }
-  }
-
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sellers_name_normalized ON sellers(name_normalized)');
+  const { rows: existing } = await pool.query(
+    'SELECT id FROM sellers WHERE name_normalized = $1', [normalized]
+  );
+  if (existing[0]) return existing[0].id;
+  const { rows } = await pool.query(
+    'INSERT INTO sellers (name, name_normalized) VALUES ($1, $2) RETURNING id',
+    [name, normalized]
+  );
+  return rows[0].id;
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -491,7 +468,7 @@ async function main() {
   console.log(' DOT4 Forecast V2 — Excel Importer');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(` File  : ${XLSX_PATH}`);
-  console.log(` DB    : ${DB_PATH}`);
+  console.log(` DB    : ${process.env.DATABASE_URL?.replace(/:\/\/.*@/, '://***@')}`);
   console.log(` Year  : ${YEAR}`);
   console.log(` Mode  : ${DRY_RUN ? 'DRY RUN (no writes)' : 'LIVE'}`);
   if (CLEAR) console.log(' Clear : Will delete existing plans + transactions first');
@@ -552,136 +529,121 @@ async function main() {
     return;
   }
 
-  // ── Open DB ──
-  const db = new Database(DB_PATH);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  // ── Connect to PostgreSQL ──
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  });
+  const client = await pool.connect();
 
-  // Ensure name_normalized column exists and duplicates are merged
-  ensureSellerNormalized(db);
+  try {
+    // ── Optionally clear ──
+    if (CLEAR) {
+      console.log('\nClearing existing data...');
+      await client.query('DELETE FROM transactions');
+      await client.query('DELETE FROM plans');
+      console.log('  Existing transactions and plans deleted.');
+    }
 
-  // ── Optionally clear ──
-  if (CLEAR) {
-    console.log('\nClearing existing data...');
-    db.prepare('DELETE FROM transactions').run();
-    db.prepare('DELETE FROM plans').run();
-    console.log('  Existing transactions and plans deleted.');
-  }
+    // ── Import plans ──
+    console.log('\nImporting plans...');
+    let plansImported = 0;
+    for (const p of plans) {
+      const brand_id = await upsertBrand(pool, p.brand);
+      await pool.query(`
+        INSERT INTO plans (year, brand_id, q1_plan, q2_plan, q3_plan, q4_plan)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (year, brand_id) DO UPDATE SET
+          q1_plan = EXCLUDED.q1_plan,
+          q2_plan = EXCLUDED.q2_plan,
+          q3_plan = EXCLUDED.q3_plan,
+          q4_plan = EXCLUDED.q4_plan
+      `, [YEAR, brand_id, p.q1_plan, p.q2_plan, p.q3_plan, p.q4_plan]);
+      console.log(`  + ${p.brand}: Q1=${p.q1_plan.toLocaleString()} Q2=${p.q2_plan.toLocaleString()} Q3=${p.q3_plan.toLocaleString()} Q4=${p.q4_plan.toLocaleString()}`);
+      plansImported++;
+    }
 
-  // ── Import plans ──
-  console.log('\nImporting plans...');
-  const insertPlan = db.prepare(`
-    INSERT INTO plans (year, brand_id, q1_plan, q2_plan, q3_plan, q4_plan)
-    VALUES (@year, @brand_id, @q1_plan, @q2_plan, @q3_plan, @q4_plan)
-    ON CONFLICT(year, brand_id) DO UPDATE SET
-      q1_plan = excluded.q1_plan,
-      q2_plan = excluded.q2_plan,
-      q3_plan = excluded.q3_plan,
-      q4_plan = excluded.q4_plan
-  `);
-
-  let plansImported = 0;
-  for (const p of plans) {
-    const brand_id = upsertBrand(db, p.brand);
-    insertPlan.run({ year: YEAR, brand_id, q1_plan: p.q1_plan, q2_plan: p.q2_plan, q3_plan: p.q3_plan, q4_plan: p.q4_plan });
-    console.log(`  + ${p.brand}: Q1=${p.q1_plan.toLocaleString()} Q2=${p.q2_plan.toLocaleString()} Q3=${p.q3_plan.toLocaleString()} Q4=${p.q4_plan.toLocaleString()}`);
-    plansImported++;
-  }
-
-  // ── Import transactions ──
-  console.log(`\nImporting ${allTx.length} transactions...`);
-  const insertTx = db.prepare(`
-    INSERT INTO transactions (
-      client_name, project_name, seller_id, brand_id,
-      sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
-      due_date, stage_label, status_label, tcv,
-      allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      notes, invoice_number
-    ) VALUES (
-      @client_name, @project_name, @seller_id, @brand_id,
-      @sub_brand, @vendor_name, @opportunity_odoo, @brand_opportunity_number,
-      @due_date, @stage_label, @status_label, @tcv,
-      @allocation_q1, @allocation_q2, @allocation_q3, @allocation_q4,
-      @notes, @invoice_number
-    )
-  `);
-
-  const importAllTx = db.transaction((txList) => {
-    let count = 0;
+    // ── Import transactions ──
+    console.log(`\nImporting ${allTx.length} transactions...`);
+    let txImported = 0;
     const txErrors = [];
-    for (const tx of txList) {
+
+    await client.query('BEGIN');
+    for (const tx of allTx) {
       try {
-        const seller_id = upsertSeller(db, tx.seller_name);
-        const brand_id  = upsertBrand(db, tx.brand_name);
-        insertTx.run({
-          client_name:              tx.client_name,
-          project_name:             tx.project_name,
-          seller_id,
-          brand_id,
-          sub_brand:                tx.sub_brand,
-          vendor_name:              tx.vendor_name,
-          opportunity_odoo:         tx.opportunity_odoo,
-          brand_opportunity_number: tx.brand_opportunity_number,
-          due_date:                 tx.due_date,
-          stage_label:              tx.stage_label,
-          status_label:             tx.status_label,
-          tcv:                      tx.tcv,
-          allocation_q1:            tx.allocation_q1,
-          allocation_q2:            tx.allocation_q2,
-          allocation_q3:            tx.allocation_q3,
-          allocation_q4:            tx.allocation_q4,
-          notes:                    tx.notes,
-          invoice_number:           tx.invoice_number,
-        });
-        count++;
+        const seller_id = await upsertSeller(pool, tx.seller_name);
+        const brand_id  = await upsertBrand(pool, tx.brand_name);
+        await pool.query(`
+          INSERT INTO transactions (
+            client_name, project_name, seller_id, brand_id,
+            sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
+            due_date, stage_label, status_label, tcv,
+            allocation_q1, allocation_q2, allocation_q3, allocation_q4,
+            notes, invoice_number
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8,
+            $9, $10, $11, $12,
+            $13, $14, $15, $16,
+            $17, $18
+          )
+        `, [
+          tx.client_name, tx.project_name, seller_id, brand_id,
+          tx.sub_brand, tx.vendor_name, tx.opportunity_odoo, tx.brand_opportunity_number,
+          tx.due_date, tx.stage_label, tx.status_label, tx.tcv,
+          tx.allocation_q1, tx.allocation_q2, tx.allocation_q3, tx.allocation_q4,
+          tx.notes, tx.invoice_number,
+        ]);
+        txImported++;
       } catch (e) {
         txErrors.push({ client: tx.client_name, error: e.message });
       }
     }
-    return { count, txErrors };
-  });
+    await client.query('COMMIT');
 
-  const { count: txImported, txErrors } = importAllTx(allTx);
+    // ─── Summary ────────────────────────────────────────────────────────────
 
-  // ─── Summary ──────────────────────────────────────────────────────────────
-
-  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(' Import Summary');
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(` Plans imported          : ${plansImported}`);
-  console.log(` Transactions imported   : ${txImported}`);
-  console.log(` Transactions skipped    : ${allSkipped.length}`);
-  if (txErrors.length) {
-    console.log(` Transactions errored    : ${txErrors.length}`);
-    txErrors.forEach(e => console.log(`  x "${e.client}": ${e.error}`));
-  }
-  console.log('');
-
-  if (allSkipped.length) {
-    console.log('── Skipped row details:');
-    allSkipped.forEach(s => {
-      const where = s.sheet ? `[${s.sheet} row ${s.row}]` : `[row ${s.row}]`;
-      const who   = s.client ? ` "${s.client}"` : '';
-      console.log(`  ${where}${who}: ${s.reason}`);
-    });
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(' Import Summary');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(` Plans imported          : ${plansImported}`);
+    console.log(` Transactions imported   : ${txImported}`);
+    console.log(` Transactions skipped    : ${allSkipped.length}`);
+    if (txErrors.length) {
+      console.log(` Transactions errored    : ${txErrors.length}`);
+      txErrors.forEach(e => console.log(`  x "${e.client}": ${e.error}`));
+    }
     console.log('');
+
+    if (allSkipped.length) {
+      console.log('── Skipped row details:');
+      allSkipped.forEach(s => {
+        const where = s.sheet ? `[${s.sheet} row ${s.row}]` : `[row ${s.row}]`;
+        const who   = s.client ? ` "${s.client}"` : '';
+        console.log(`  ${where}${who}: ${s.reason}`);
+      });
+      console.log('');
+    }
+
+    // Quick DB verification
+    const { rows: counts } = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM transactions WHERE deleted_at IS NULL) AS tx,
+        (SELECT COUNT(*) FROM plans) AS plans,
+        (SELECT COUNT(*) FROM brands) AS brands,
+        (SELECT COUNT(*) FROM sellers) AS sellers
+    `);
+    console.log('── DB state after import:');
+    console.log(`  transactions : ${counts[0].tx}`);
+    console.log(`  plans        : ${counts[0].plans}`);
+    console.log(`  brands       : ${counts[0].brands}`);
+    console.log(`  sellers      : ${counts[0].sellers}`);
+    console.log('');
+    console.log('Done.');
+
+  } finally {
+    client.release();
+    await pool.end();
   }
-
-  // Quick DB verification
-  const txCount    = db.prepare('SELECT COUNT(*) as n FROM transactions WHERE deleted_at IS NULL').get().n;
-  const planCount  = db.prepare('SELECT COUNT(*) as n FROM plans').get().n;
-  const brandCount = db.prepare('SELECT COUNT(*) as n FROM brands').get().n;
-  const sellerCount = db.prepare('SELECT COUNT(*) as n FROM sellers').get().n;
-
-  console.log('── DB state after import:');
-  console.log(`  transactions : ${txCount}`);
-  console.log(`  plans        : ${planCount}`);
-  console.log(`  brands       : ${brandCount}`);
-  console.log(`  sellers      : ${sellerCount}`);
-  console.log('');
-  console.log('Done.');
-
-  db.close();
 }
 
 main().catch(e => {
