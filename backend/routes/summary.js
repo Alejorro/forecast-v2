@@ -38,7 +38,7 @@ router.get('/brands/:id/summary', (req, res) => {
   const stageAgg = {};
 
   for (const tx of txRows) {
-    const isLoss = tx.status_label === 'LOSS';
+    const isLoss = tx.stage_label === 'LOSS';
     const pct    = STAGE_MAP[tx.stage_label] ?? 0;
     const wt     = tx.tcv * pct;
 
@@ -77,7 +77,7 @@ router.get('/brands/:id/summary', (req, res) => {
 
   // Top 10 active transactions for this brand (not Won, not LOSS)
   const top_transactions = txRows
-    .filter(tx => tx.stage_label !== 'Won' && tx.status_label !== 'LOSS')
+    .filter(tx => tx.stage_label !== 'Won' && tx.stage_label !== 'LOSS')
     .map(deriveTransaction)
     .sort((a, b) => b.weighted_total - a.weighted_total)
     .slice(0, 10);
@@ -103,7 +103,7 @@ router.get('/sellers/summary', (req, res) => {
   const sellers = db.prepare('SELECT id, name FROM sellers ORDER BY name ASC').all();
 
   const txRows = db.prepare(`
-    SELECT t.seller_id, t.tcv, t.stage_label, t.status_label,
+    SELECT t.seller_id, t.tcv, t.stage_label,
            t.allocation_q1, t.allocation_q2, t.allocation_q3, t.allocation_q4
     FROM transactions t
     WHERE t.deleted_at IS NULL
@@ -114,7 +114,7 @@ router.get('/sellers/summary', (req, res) => {
   // Aggregate per seller
   const agg = {};
   for (const tx of txRows) {
-    const isLoss = tx.status_label === 'LOSS';
+    const isLoss = tx.stage_label === 'LOSS';
     const pct    = STAGE_MAP[tx.stage_label] ?? 0;
     const wt     = tx.tcv * pct;
 

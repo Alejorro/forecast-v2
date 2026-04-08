@@ -6,15 +6,15 @@ const STAGE_STYLES = {
   'Proposal 50': 'bg-amber-100 text-amber-700',
   'Proposal 75': 'bg-orange-100 text-orange-700',
   'Won':         'bg-green-100 text-green-700',
-  'LOSS':        'bg-slate-100 text-slate-500',
+  'LOSS':        'bg-red-50 text-red-500',
 }
 
 const STAGE_DISPLAY = {
-  'Identified':  'Identified 10%',
-  'Proposal 25': 'Proposal 25%',
-  'Proposal 50': 'Proposal 50%',
-  'Proposal 75': 'Proposal 75%',
-  'Won':         'Won',
+  'Identified':  'IDENTIFIED 10%',
+  'Proposal 25': 'PROPOSAL 25%',
+  'Proposal 50': 'PROPOSAL 50%',
+  'Proposal 75': 'PROPOSAL 75%',
+  'Won':         'WON 100%',
   'LOSS':        'LOSS',
 }
 

@@ -10,20 +10,74 @@ export const STAGE_MAP = {
   'Proposal 50':  0.50,
   'Proposal 75':  0.75,
   'Won':          1.00,
+  'LOSS':         0,
 };
 
 export const VALID_STAGES = Object.keys(STAGE_MAP);
+
+/**
+ * Valid quarter values for a transaction.
+ * 1Q-4Q means the deal spans all four quarters equally.
+ */
+export const VALID_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4', '1Q-4Q'];
+
+/**
+ * Converts a quarter string to allocation values.
+ * Q1/Q2/Q3/Q4 → 100% in that quarter, 0 in others.
+ * 1Q-4Q       → 25% in each quarter.
+ * Returns null if the quarter string is not recognized.
+ */
+export function quarterToAllocations(quarter) {
+  switch (quarter) {
+    case 'Q1':   return { allocation_q1: 1, allocation_q2: 0, allocation_q3: 0, allocation_q4: 0 };
+    case 'Q2':   return { allocation_q1: 0, allocation_q2: 1, allocation_q3: 0, allocation_q4: 0 };
+    case 'Q3':   return { allocation_q1: 0, allocation_q2: 0, allocation_q3: 1, allocation_q4: 0 };
+    case 'Q4':   return { allocation_q1: 0, allocation_q2: 0, allocation_q3: 0, allocation_q4: 1 };
+    case '1Q-4Q': return { allocation_q1: 0.25, allocation_q2: 0.25, allocation_q3: 0.25, allocation_q4: 0.25 };
+    default:     return null;
+  }
+}
+
+/**
+ * Infers the quarter label from allocation values stored on a row.
+ * Returns 'Q1', 'Q2', 'Q3', 'Q4', '1Q-4Q', or null if it cannot be inferred.
+ */
+export function inferQuarter(row) {
+  const q1 = row.allocation_q1 ?? 0;
+  const q2 = row.allocation_q2 ?? 0;
+  const q3 = row.allocation_q3 ?? 0;
+  const q4 = row.allocation_q4 ?? 0;
+
+  if (q1 === 1 && q2 === 0 && q3 === 0 && q4 === 0) return 'Q1';
+  if (q1 === 0 && q2 === 1 && q3 === 0 && q4 === 0) return 'Q2';
+  if (q1 === 0 && q2 === 0 && q3 === 1 && q4 === 0) return 'Q3';
+  if (q1 === 0 && q2 === 0 && q3 === 0 && q4 === 1) return 'Q4';
+  // Equal split within 0.001 tolerance
+  if (Math.abs(q1 - 0.25) < 0.001 && Math.abs(q2 - 0.25) < 0.001 &&
+      Math.abs(q3 - 0.25) < 0.001 && Math.abs(q4 - 0.25) < 0.001) return '1Q-4Q';
+  return null;
+}
+
+/**
+ * Returns true if a transaction row is a LOSS record.
+ */
+export function isLoss(row) {
+  return row.stage_label === 'LOSS';
+}
 
 /**
  * Adds derived fields to a raw DB transaction row.
  * Does NOT mutate the original row — returns a new object.
  *
  * Derived fields added:
- *   stage_percent, weighted_total, q1_value, q2_value, q3_value, q4_value
+ *   stage_percent, weighted_total, q1_value, q2_value, q3_value, q4_value, quarter
+ *
+ * For LOSS rows: stage_percent and weighted_total are still derived but the
+ * row is excluded from all forecast calculations at the aggregation level.
  */
 export function deriveTransaction(row) {
   const stage_percent = STAGE_MAP[row.stage_label] ?? 0;
-  const weighted_total = row.tcv * stage_percent;
+  const weighted_total = (row.tcv ?? 0) * stage_percent;
 
   return {
     ...row,
@@ -33,6 +87,7 @@ export function deriveTransaction(row) {
     q2_value: weighted_total * (row.allocation_q2 ?? 0),
     q3_value: weighted_total * (row.allocation_q3 ?? 0),
     q4_value: weighted_total * (row.allocation_q4 ?? 0),
+    quarter:  inferQuarter(row),
   };
 }
 
@@ -51,18 +106,22 @@ export function computeGap(plan, forecast) {
  */
 export function validateStageLabel(stage_label) {
   if (!stage_label) return 'stage_label is required';
-  if (!STAGE_MAP[stage_label]) {
+  if (!(stage_label in STAGE_MAP)) {
     return `Invalid stage_label "${stage_label}". Must be one of: ${VALID_STAGES.join(', ')}`;
   }
   return null;
 }
 
 /**
- * Validates status_label. Returns error string or null.
+ * Validates quarter field. Returns error string or null.
+ * Pass isLossRow=true to skip quarter validation for LOSS records.
  */
-export function validateStatusLabel(status_label) {
-  if (status_label === null || status_label === undefined || status_label === '') return null;
-  if (status_label !== 'LOSS') return 'status_label must be null or "LOSS"';
+export function validateQuarter(quarter, isLossRow = false) {
+  if (isLossRow) return null; // quarter not required for LOSS
+  if (!quarter) return 'quarter is required';
+  if (!VALID_QUARTERS.includes(quarter)) {
+    return `Invalid quarter "${quarter}". Must be one of: ${VALID_QUARTERS.join(', ')}`;
+  }
   return null;
 }
 

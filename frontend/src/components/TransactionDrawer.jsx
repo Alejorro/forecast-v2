@@ -4,24 +4,35 @@ import { createTransaction, updateTransaction, deleteTransaction } from '../util
 import { formatUSD } from '../utils/format'
 
 const STAGE_OPTIONS = [
-  'Identified',
-  'Proposal 25',
-  'Proposal 50',
-  'Proposal 75',
-  'Won',
+  { value: 'Identified',  label: 'IDENTIFIED 10%',  pct: 0.10 },
+  { value: 'Proposal 25', label: 'PROPOSAL 25%',     pct: 0.25 },
+  { value: 'Proposal 50', label: 'PROPOSAL 50%',     pct: 0.50 },
+  { value: 'Proposal 75', label: 'PROPOSAL 75%',     pct: 0.75 },
+  { value: 'Won',         label: 'WON 100%',         pct: 1.00 },
+  { value: 'LOSS',        label: 'LOSS',             pct: 0.00 },
 ]
 
-const STAGE_PERCENT = {
-  'Identified': 0.10,
-  'Proposal 25': 0.25,
-  'Proposal 50': 0.50,
-  'Proposal 75': 0.75,
-  'Won': 1.00,
+const STAGE_PCT = Object.fromEntries(STAGE_OPTIONS.map((s) => [s.value, s.pct]))
+
+const QUARTER_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4', '1Q-4Q']
+
+/** Derive a single quarter label from existing allocation fields. */
+function deriveQuarter(tx) {
+  const q1 = tx.allocation_q1 ?? 0
+  const q2 = tx.allocation_q2 ?? 0
+  const q3 = tx.allocation_q3 ?? 0
+  const q4 = tx.allocation_q4 ?? 0
+  const near = (a, b) => Math.abs(a - b) < 0.001
+  if (near(q1, 1) && near(q2, 0) && near(q3, 0) && near(q4, 0)) return 'Q1'
+  if (near(q1, 0) && near(q2, 1) && near(q3, 0) && near(q4, 0)) return 'Q2'
+  if (near(q1, 0) && near(q2, 0) && near(q3, 1) && near(q4, 0)) return 'Q3'
+  if (near(q1, 0) && near(q2, 0) && near(q3, 0) && near(q4, 1)) return 'Q4'
+  if (near(q1, 0.25) && near(q2, 0.25) && near(q3, 0.25) && near(q4, 0.25)) return '1Q-4Q'
+  return ''
 }
 
 const EMPTY_FORM = {
   client_name: '',
-  project_name: '',
   brand_id: '',
   seller_id: '',
   sub_brand: '',
@@ -30,12 +41,8 @@ const EMPTY_FORM = {
   brand_opportunity_number: '',
   tcv: '',
   stage_label: 'Identified',
-  status_label: '',
+  quarter: '',
   due_date: '',
-  allocation_q1: '',
-  allocation_q2: '',
-  allocation_q3: '',
-  allocation_q4: '',
   description: '',
   invoice_number: '',
   notes: '',
@@ -43,25 +50,20 @@ const EMPTY_FORM = {
 
 function buildFormFromTransaction(tx) {
   return {
-    client_name: tx.client_name || '',
-    project_name: tx.project_name || '',
-    brand_id: tx.brand_id != null ? String(tx.brand_id) : '',
-    seller_id: tx.seller_id != null ? String(tx.seller_id) : '',
-    sub_brand: tx.sub_brand || '',
-    vendor_name: tx.vendor_name || '',
-    opportunity_odoo: tx.opportunity_odoo || '',
+    client_name:              tx.client_name || '',
+    brand_id:                 tx.brand_id != null ? String(tx.brand_id) : '',
+    seller_id:                tx.seller_id != null ? String(tx.seller_id) : '',
+    sub_brand:                tx.sub_brand || '',
+    vendor_name:              tx.vendor_name || '',
+    opportunity_odoo:         tx.opportunity_odoo || '',
     brand_opportunity_number: tx.brand_opportunity_number || '',
-    tcv: tx.tcv != null ? String(tx.tcv) : '',
-    stage_label: tx.stage_label || 'Identified',
-    status_label: tx.status_label || '',
-    due_date: tx.due_date ? tx.due_date.substring(0, 10) : '',
-    allocation_q1: tx.allocation_q1 != null ? String(tx.allocation_q1) : '',
-    allocation_q2: tx.allocation_q2 != null ? String(tx.allocation_q2) : '',
-    allocation_q3: tx.allocation_q3 != null ? String(tx.allocation_q3) : '',
-    allocation_q4: tx.allocation_q4 != null ? String(tx.allocation_q4) : '',
-    description: tx.description || '',
-    invoice_number: tx.invoice_number || '',
-    notes: tx.notes || '',
+    tcv:                      tx.tcv != null ? String(tx.tcv) : '',
+    stage_label:              tx.stage_label || 'Identified',
+    quarter:                  deriveQuarter(tx),
+    due_date:                 tx.due_date ? tx.due_date.substring(0, 10) : '',
+    description:              tx.description || '',
+    invoice_number:           tx.invoice_number || '',
+    notes:                    tx.notes || '',
   }
 }
 
@@ -91,15 +93,14 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
   const [errors, setErrors] = useState({})
   const [saving, setSaving] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [tcvFocused, setTcvFocused] = useState(false)
   const firstInputRef = useRef(null)
 
-  // Focus first input on open
   useEffect(() => {
     const timer = setTimeout(() => firstInputRef.current?.focus(), 50)
     return () => clearTimeout(timer)
   }, [])
 
-  // Keyboard handler
   useEffect(() => {
     function handleKey(e) {
       if (e.key === 'Escape') onClose()
@@ -120,42 +121,40 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     })
   }, [])
 
-  // Computed preview values
+  // Computed preview
   const tcvNum = parseFloat(form.tcv) || 0
-  const stagePercent = STAGE_PERCENT[form.stage_label] || 0
+  const stagePercent = STAGE_PCT[form.stage_label] || 0
   const weighted = tcvNum * stagePercent
-  const q1Val = weighted * (parseFloat(form.allocation_q1) || 0)
-  const q2Val = weighted * (parseFloat(form.allocation_q2) || 0)
-  const q3Val = weighted * (parseFloat(form.allocation_q3) || 0)
-  const q4Val = weighted * (parseFloat(form.allocation_q4) || 0)
-  const allocTotal =
-    (parseFloat(form.allocation_q1) || 0) +
-    (parseFloat(form.allocation_q2) || 0) +
-    (parseFloat(form.allocation_q3) || 0) +
-    (parseFloat(form.allocation_q4) || 0)
+
+  const isLossStage = form.stage_label === 'LOSS'
 
   function validate() {
     const errs = {}
     if (!form.client_name.trim()) errs.client_name = 'Required'
     if (!form.brand_id) errs.brand_id = 'Required'
     if (!form.seller_id) errs.seller_id = 'Required'
-    if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0)
-      errs.tcv = 'Enter a valid amount'
-    if (!form.stage_label) errs.stage_label = 'Required'
-    if (!form.due_date) errs.due_date = 'Required'
-
-    // Allocations must sum to 1.0 if any are provided
-    const allocs = [form.allocation_q1, form.allocation_q2, form.allocation_q3, form.allocation_q4]
-    const hasAlloc = allocs.some((a) => a !== '' && a !== null)
-    if (hasAlloc) {
-      const sum = allocs.reduce((acc, a) => acc + (parseFloat(a) || 0), 0)
-      if (Math.abs(sum - 1.0) > 0.001) {
-        errs.allocations = `Allocations sum to ${(sum * 100).toFixed(1)}% — must equal 100%`
-      }
+    if (!isLossStage) {
+      if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0)
+        errs.tcv = 'Enter a valid amount'
+      if (!form.quarter) errs.quarter = 'Required'
+      if (!form.due_date) errs.due_date = 'Required'
     }
-
+    if (!form.stage_label) errs.stage_label = 'Required'
     return errs
   }
+
+  const isFormValid = (() => {
+    if (!form.client_name.trim()) return false
+    if (!form.brand_id) return false
+    if (!form.seller_id) return false
+    if (!form.stage_label) return false
+    if (!isLossStage) {
+      if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0) return false
+      if (!form.quarter) return false
+      if (!form.due_date) return false
+    }
+    return true
+  })()
 
   async function handleSave() {
     const errs = validate()
@@ -167,14 +166,20 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     setSaving(true)
     try {
       const payload = {
-        ...form,
-        brand_id: form.brand_id ? Number(form.brand_id) : null,
-        seller_id: form.seller_id ? Number(form.seller_id) : null,
-        tcv: parseFloat(form.tcv),
-        allocation_q1: form.allocation_q1 !== '' ? parseFloat(form.allocation_q1) : null,
-        allocation_q2: form.allocation_q2 !== '' ? parseFloat(form.allocation_q2) : null,
-        allocation_q3: form.allocation_q3 !== '' ? parseFloat(form.allocation_q3) : null,
-        allocation_q4: form.allocation_q4 !== '' ? parseFloat(form.allocation_q4) : null,
+        client_name:              form.client_name,
+        brand_id:                 form.brand_id ? Number(form.brand_id) : null,
+        seller_id:                form.seller_id ? Number(form.seller_id) : null,
+        sub_brand:                form.sub_brand || null,
+        vendor_name:              form.vendor_name || null,
+        opportunity_odoo:         form.opportunity_odoo || null,
+        brand_opportunity_number: form.brand_opportunity_number || null,
+        tcv:                      isLossStage ? (parseFloat(form.tcv) || 0) : parseFloat(form.tcv),
+        stage_label:              form.stage_label,
+        quarter:                  form.quarter || null,
+        due_date:                 form.due_date || null,
+        description:              form.description || null,
+        invoice_number:           form.invoice_number || null,
+        notes:                    form.notes || null,
       }
 
       if (isEdit) {
@@ -205,15 +210,20 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     if (e.target === e.currentTarget) onClose()
   }
 
+  // TCV display value: formatted when blurred, raw when focused
+  const tcvDisplayValue = tcvFocused
+    ? form.tcv
+    : form.tcv !== '' && !isNaN(parseFloat(form.tcv))
+    ? new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(parseFloat(form.tcv))
+    : ''
+
   return (
     <div
       className="fixed inset-0 z-50 flex justify-end"
       onClick={handleBackdropClick}
     >
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/30" aria-hidden="true" />
 
-      {/* Drawer panel */}
       <div
         className="relative w-full max-w-[480px] h-full bg-white shadow-xl flex flex-col overflow-hidden"
         role="dialog"
@@ -255,16 +265,6 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             />
           </Field>
 
-          <Field label="Project Name" error={errors.project_name}>
-            <input
-              type="text"
-              className={inputClass}
-              placeholder="e.g. Network Upgrade Phase 2"
-              value={form.project_name}
-              onChange={(e) => set('project_name', e.target.value)}
-            />
-          </Field>
-
           <div className="grid grid-cols-2 gap-3">
             <Field label="Brand" required error={errors.brand_id}>
               <select
@@ -274,9 +274,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
               >
                 <option value="">Select brand...</option>
                 {brands.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
+                  <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
             </Field>
@@ -289,9 +287,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
               >
                 <option value="">Select seller...</option>
                 {sellers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
+                  <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
             </Field>
@@ -307,17 +303,27 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             />
           </Field>
 
+          {/* TCV + Due Date */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="TCV (USD)" required error={errors.tcv}>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className={inputClass}
-                placeholder="0"
-                value={form.tcv}
-                onChange={(e) => set('tcv', e.target.value)}
-              />
+              <div className="relative">
+                <span className="absolute inset-y-0 left-3 flex items-center text-sm text-[#94A3B8] pointer-events-none">
+                  $
+                </span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className={`${inputClass} pl-6`}
+                  placeholder="0"
+                  value={tcvDisplayValue}
+                  onFocus={() => setTcvFocused(true)}
+                  onBlur={() => setTcvFocused(false)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/,/g, '')
+                    set('tcv', raw)
+                  }}
+                />
+              </div>
             </Field>
 
             <Field label="Due Date" required error={errors.due_date}>
@@ -330,6 +336,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             </Field>
           </div>
 
+          {/* Stage + Quarter */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Stage" required error={errors.stage_label}>
               <select
@@ -338,98 +345,53 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
                 onChange={(e) => set('stage_label', e.target.value)}
               >
                 {STAGE_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
+                  <option key={s.value} value={s.value}>{s.label}</option>
                 ))}
               </select>
             </Field>
 
-            <Field label="Status" error={errors.status_label}>
+            <Field label="Quarter" required error={errors.quarter}>
               <select
                 className={inputClass}
-                value={form.status_label}
-                onChange={(e) => set('status_label', e.target.value)}
+                value={form.quarter}
+                onChange={(e) => set('quarter', e.target.value)}
               >
-                <option value="">—</option>
-                <option value="LOSS">LOSS</option>
+                <option value="">Select quarter...</option>
+                {QUARTER_OPTIONS.map((q) => (
+                  <option key={q} value={q}>{q}</option>
+                ))}
               </select>
             </Field>
           </div>
 
-          {/* Allocations */}
-          <div>
-            <p className="text-xs font-medium text-[#64748B] mb-2">
-              Quarter Allocations{' '}
-              <span className="text-[#94A3B8] font-normal">(decimals, must sum to 1.0)</span>
-            </p>
-            <div className="grid grid-cols-4 gap-2">
-              {['q1', 'q2', 'q3', 'q4'].map((q, i) => {
-                const field = `allocation_${q}`
-                return (
-                  <div key={q}>
-                    <label className="block text-xs text-[#94A3B8] mb-1 text-center">
-                      Q{i + 1}
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      className={`${inputClass} text-center`}
-                      placeholder="0"
-                      value={form[field]}
-                      onChange={(e) => set(field, e.target.value)}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-            {errors.allocations && (
-              <p className="text-xs text-red-500 mt-1.5">{errors.allocations}</p>
-            )}
-
-            {/* Live preview */}
-            {tcvNum > 0 && (
-              <div className="mt-3 bg-[#F8FAFC] border border-[#E2E8F0] rounded-md px-3 py-2.5">
-                <p className="text-xs text-[#64748B] font-medium mb-1">
-                  Weighted preview{' '}
-                  <span className="text-[#94A3B8] font-normal">
-                    ({(stagePercent * 100).toFixed(0)}% × {formatUSD(tcvNum)} = {formatUSD(weighted)})
-                  </span>
-                </p>
-                <div className="flex gap-4 text-xs">
-                  {[
-                    { label: 'Q1', val: q1Val },
-                    { label: 'Q2', val: q2Val },
-                    { label: 'Q3', val: q3Val },
-                    { label: 'Q4', val: q4Val },
-                  ].map(({ label, val }) => (
-                    <div key={label}>
-                      <span className="text-[#94A3B8]">{label}: </span>
-                      <span className="font-medium text-[#0F172A]">
-                        {val > 0 ? formatUSD(val) : '—'}
-                      </span>
-                    </div>
-                  ))}
-                  <div className="ml-auto">
-                    <span className="text-[#94A3B8]">Sum: </span>
-                    <span
-                      className={`font-medium ${
-                        Math.abs(allocTotal - 1.0) < 0.001
-                          ? 'text-green-600'
-                          : allocTotal > 0
-                          ? 'text-red-500'
-                          : 'text-[#94A3B8]'
-                      }`}
-                    >
-                      {(allocTotal * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                </div>
+          {/* Weighted preview */}
+          {isLossStage ? (
+            <div className="bg-red-50 border border-red-100 rounded-md px-3 py-2.5">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-red-400">Weighted forecast</span>
+                <span className="text-sm font-semibold text-red-400 tabular-nums">$0 — LOSS</span>
               </div>
-            )}
-          </div>
+            </div>
+          ) : tcvNum > 0 && (
+            <div className="bg-[#F8FAFC] border border-[#E2E8F0] rounded-md px-3 py-2.5">
+              <div className="flex items-baseline justify-between">
+                <span className="text-xs text-[#64748B]">
+                  Weighted{' '}
+                  <span className="text-[#94A3B8]">
+                    ({(stagePercent * 100).toFixed(0)}% × {formatUSD(tcvNum)})
+                  </span>
+                </span>
+                <span className="text-sm font-semibold text-[#0F172A] tabular-nums">
+                  {formatUSD(weighted)}
+                </span>
+              </div>
+              {form.quarter === '1Q-4Q' && (
+                <p className="text-xs text-[#94A3B8] mt-1">
+                  Distributed equally across Q1–Q4 ({formatUSD(weighted / 4)} each)
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Optional fields */}
           <Field label="Vendor Name" error={errors.vendor_name}>
@@ -486,7 +448,6 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
 
         {/* Footer */}
         <div className="flex-shrink-0 border-t border-[#E2E8F0] px-6 py-4">
-          {/* Delete confirmation */}
           {isEdit && showDeleteConfirm && (
             <div className="mb-3 bg-red-50 border border-red-200 rounded-md px-3 py-2.5 flex items-center justify-between">
               <p className="text-xs text-red-700">Delete this transaction?</p>
@@ -509,7 +470,6 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
           )}
 
           <div className="flex items-center justify-between">
-            {/* Left: delete link */}
             <div>
               {isEdit && !showDeleteConfirm && (
                 <button
@@ -521,7 +481,6 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
               )}
             </div>
 
-            {/* Right: cancel + save */}
             <div className="flex gap-3">
               <button
                 onClick={onClose}
@@ -531,8 +490,8 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-medium text-white bg-[#2563EB] rounded-md hover:bg-[#1D4ED8] disabled:opacity-50 transition-colors"
+                disabled={saving || !isFormValid}
+                className="px-4 py-2 text-sm font-medium text-white bg-[#2563EB] rounded-md hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>

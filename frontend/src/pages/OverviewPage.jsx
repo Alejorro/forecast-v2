@@ -56,7 +56,7 @@ function Section({ title, subtitle, children }) {
 // ─── Chart: Plan vs Forecast vs Won by Quarter ────────────────────────────────
 
 const QUARTERLY_COLORS = {
-  plan:     '#D1D5DB', // gray-300
+  plan:     '#FB923C', // orange-400 — neutral but distinct from forecast/won
   forecast: '#2563EB', // blue-600
   won:      '#16A34A', // green-600
 }
@@ -66,6 +66,23 @@ function formatK(val) {
   if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`
   if (val >= 1_000)     return `$${(val / 1_000).toFixed(0)}K`
   return `$${val}`
+}
+
+function QuarterlyLegend({ payload }) {
+  if (!payload?.length) return null
+  return (
+    <div className="flex items-center justify-center gap-7 pt-5">
+      {payload.map(entry => (
+        <div key={entry.value} className="flex items-center gap-2.5">
+          <div
+            className="rounded-sm shrink-0"
+            style={{ width: 14, height: 14, backgroundColor: entry.color }}
+          />
+          <span style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function QuarterlyChart({ data }) {
@@ -98,14 +115,18 @@ function QuarterlyChart({ data }) {
         />
         <Tooltip
           formatter={(val, name) => [formatUSD(val), name]}
-          contentStyle={{ fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 6, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
-          cursor={{ fill: '#F8FAFC' }}
+          labelStyle={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 6 }}
+          itemStyle={{ fontSize: 13, color: '#334155', padding: '1px 0' }}
+          contentStyle={{
+            border: '1px solid #CBD5E1',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+            padding: '10px 14px',
+            backgroundColor: '#fff',
+          }}
+          cursor={{ fill: 'rgba(148, 163, 184, 0.07)' }}
         />
-        <Legend
-          iconType="square"
-          iconSize={10}
-          wrapperStyle={{ fontSize: 12, color: '#64748B', paddingTop: 14 }}
-        />
+        <Legend content={<QuarterlyLegend />} />
         <Bar dataKey="Plan"     fill={QUARTERLY_COLORS.plan}     radius={[3,3,0,0]} />
         <Bar dataKey="Forecast" fill={QUARTERLY_COLORS.forecast} radius={[3,3,0,0]} />
         <Bar dataKey="Won"      fill={QUARTERLY_COLORS.won}      radius={[3,3,0,0]} />
@@ -182,19 +203,29 @@ function GapByBrandChart({ data }) {
 // ─── Chart: Pipeline by Stage (donut) ────────────────────────────────────────
 
 const STAGE_COLORS = {
-  'Identified':  '#E5E7EB',
-  'Proposal 25': '#93C5FD',
-  'Proposal 50': '#3B82F6',
-  'Proposal 75': '#1D4ED8',
-  'Won':         '#16A34A',
+  'Identified':  '#FED7AA', // orange-200 — softest, early stage
+  'Proposal 25': '#FB923C', // orange-400
+  'Proposal 50': '#60A5FA', // blue-400
+  'Proposal 75': '#2563EB', // blue-600
+  'Won':         '#16A34A', // green-600 — always distinct
 }
+
+// Display-only label normalization — scoped to this card only
+function formatStageLabel(label) {
+  if (label === 'Won')        return 'Won 100%'
+  if (label === 'Identified') return 'Identified 10%'
+  if (label.startsWith('Proposal ')) return label + '%'
+  return label
+}
+
+const STAGE_ORDER = { 'Won': 0, 'Proposal 75': 1, 'Proposal 50': 2, 'Proposal 25': 3, 'Identified': 4 }
 
 function CustomTooltip({ active, payload }) {
   if (!active || !payload?.length) return null
   const { name, value } = payload[0]
   return (
     <div className="bg-white border border-[#E2E8F0] rounded-md px-3 py-2 text-xs shadow-sm">
-      <p className="font-semibold text-slate-800">{name}</p>
+      <p className="font-semibold text-slate-800">{formatStageLabel(name)}</p>
       <p className="text-slate-600 mt-0.5">{formatUSD(value)}</p>
     </div>
   )
@@ -209,51 +240,60 @@ function PipelineDonut({ data }) {
     value: d.weighted_total,
   }))
   const total = chartData.reduce((s, d) => s + d.value, 0)
+  const sortedData = [...chartData].sort((a, b) =>
+    (STAGE_ORDER[a.name] ?? 99) - (STAGE_ORDER[b.name] ?? 99)
+  )
 
   return (
-    <div className="flex items-center gap-6">
-      <ResponsiveContainer width={180} height={180}>
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={55}
-            outerRadius={80}
-            paddingAngle={2}
-            dataKey="value"
-            strokeWidth={0}
-          >
-            {chartData.map((entry) => (
-              <Cell key={entry.name} fill={STAGE_COLORS[entry.name] || '#CBD5E1'} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
+    <div className="flex items-center gap-3">
+      <div className="shrink-0" style={{ width: 240, height: 240 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={74}
+              outerRadius={108}
+              paddingAngle={2}
+              dataKey="value"
+              strokeWidth={0}
+            >
+              {chartData.map((entry) => (
+                <Cell key={entry.name} fill={STAGE_COLORS[entry.name] || '#CBD5E1'} />
+              ))}
+            </Pie>
+            <Tooltip content={<CustomTooltip />} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
-      <div className="flex-1 space-y-2">
-        {chartData.map(d => {
-          const pct = total > 0 ? ((d.value / total) * 100).toFixed(0) : 0
-          return (
-            <div key={d.name} className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <div
-                  className="w-2.5 h-2.5 rounded-sm shrink-0"
-                  style={{ backgroundColor: STAGE_COLORS[d.name] || '#CBD5E1' }}
-                />
-                <span className="text-sm text-slate-700">{d.name}</span>
+      <div className="flex-1 min-w-0">
+        <div className="space-y-2">
+          {sortedData.map(d => {
+            const pct = total > 0 ? ((d.value / total) * 100).toFixed(0) : 0
+            return (
+              <div key={d.name} className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div
+                    className="w-2.5 h-2.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: STAGE_COLORS[d.name] || '#CBD5E1' }}
+                  />
+                  <span className="text-[13px] text-slate-500 font-medium truncate">
+                    {formatStageLabel(d.name)}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-2.5 shrink-0">
+                  <span className="text-sm font-bold text-slate-900 tabular-nums">{pct}%</span>
+                  <span className="text-[13px] text-slate-400 tabular-nums w-24 text-right">{formatUSD(d.value)}</span>
+                </div>
               </div>
-              <div className="text-right">
-                <span className="text-sm font-medium text-slate-800 tabular-nums">{pct}%</span>
-                <span className="text-xs text-slate-400 ml-2 tabular-nums">{formatUSD(d.value)}</span>
-              </div>
-            </div>
-          )
-        })}
-        <div className="pt-2 border-t border-slate-100 flex justify-between">
-          <span className="text-xs text-slate-500">Total</span>
-          <span className="text-xs font-semibold text-slate-800 tabular-nums">{formatUSD(total)}</span>
+            )
+          })}
+        </div>
+        <div className="mt-3 pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
+          <span className="text-[13px] text-slate-500">Total</span>
+          <span className="text-sm font-semibold text-slate-800 tabular-nums">{formatUSD(total)}</span>
         </div>
       </div>
     </div>
@@ -350,7 +390,7 @@ export default function OverviewPage() {
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard label="Total Plan"           value={data?.total_plan}               loading={loading} color="default" />
-        <KPICard label="Weighted Forecast"    value={data?.total_weighted_forecast}  loading={loading} color="default" />
+        <KPICard label="FY Forecast"           value={data?.total_weighted_forecast}  loading={loading} color="default" />
         <KPICard label="Total Won"            value={data?.total_won}                loading={loading} color="success" />
         <KPICard label="Gap (Plan − Forecast)" value={gap}                           loading={loading} color={gapColor} />
       </div>

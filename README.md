@@ -1,165 +1,61 @@
-5. Orden correcto
-
-Hacelo en este orden:
-
-Paso 1
-
-Creá la carpeta nueva de la v2.
-
-Paso 2
-
-Creá los archivos .md y pegá lo que te dejé.
-
-Paso 3
-
-Instalá los plugins.
-
-Paso 4
-
-Abrí Claude Code sobre esa carpeta.
-
-Paso 5
-
-Corré primero el prompt del business-analyst.
-
-Paso 6
-
-Ajustá los docs si aparece algo ambiguo.
-
-Paso 7
-
-Corré el ui-designer.
-
-Paso 8
-
-Con eso cerrado, corré backend-developer.
-
-Paso 9
-
-Después frontend-developer.
-
-Paso 10
-
-Al final code-reviewer.
-
-6. Regla clave para no quemar tokens
-
-No mezcles todo junto.
-
-Mal:
-
-varios agentes a la vez
-prompts con 8 tareas
-contexto desordenado
-
-Bien:
-
-1 agente
-1 tarea
-docs cortos y claros
-salida esperada concreta
-7. Mi recomendación práctica para vos
-
-Yo haría esto mañana mismo:
-
-creás la carpeta forecast-v2
-copiás los docs del canvas
-instalás los plugins
-arrancás con business-analyst
-me pegás lo que te devuelve
-lo refinamos juntos antes de pasar al siguiente
-
-Si querés, el próximo mensaje te lo hago todavía más directo: comandos exactos desde cero para crear la carpeta y los archivos en Mac.
-
-
-
-PROMPTSS AGENTES
-
-@ui-designer
-
-Read:
-- CLAUDE.md
-- docs/SPEC.md
-- docs/SCREENS.md
-- docs/RULES.md
-
-Context:
-Internal tool, daily use.
-UX > visuals.
-Transactions screen is critical.
-
-Task:
-Design the app structure.
-
-For each screen:
-- purpose
-- sections
-- key actions
-- table fields
-
-Also:
-- navigation structure
-- UX principles
-
-Do NOT generate code.
-Keep it simple and practical.
-
-
-
-@backend-developer
-
-Read:
-- CLAUDE.md
-- docs/SPEC.md
-- docs/DATA_MODEL.md
-- docs/RULES.md
-
-Task:
-Build backend foundation.
-
-Include:
-1. SQLite schema
-2. DB init
-3. transactions CRUD
-4. plans CRUD
-5. summary endpoints
-
-Rules:
-- no stage_percent stored
-- derive all calculated values
-- exclude Cancelado
-- keep it simple
-
-Output:
-1. file structure
-2. implementation step by step
-
-
 @frontend-developer
 
 Read:
-- CLAUDE.md
-- docs/SPEC.md
-- docs/SCREENS.md
-- docs/RULES.md
+- docs/UI_DESIGN.md
+- docs/VISUAL_GUIDELINES.md
 
-Task:
-Build frontend base.
+Update Transactions UI and New Transaction modal so LOSS is handled as a Stage option.
 
-Screens:
-- Overview
-- Transactions
-- Plans
+Current desired behavior:
+- Stage dropdown must include:
+  - Identified 10%
+  - Proposal 25%
+  - Proposal 50%
+  - Proposal 75%
+  - Won 100%
+  - LOSS
+- by default, Transactions screen shows only active transactions
+- when Show LOSS toggle is ON, show ONLY LOSS transactions
+- do NOT mix LOSS and active rows
 
 Requirements:
-- clear navigation
-- clean UI
-- strong tables
-- fast forms
 
-Show:
-- weighted values clearly
+1. New Transaction / Edit Transaction modal
+- add LOSS to the Stage dropdown
+- do NOT reintroduce a separate Status field
+- Stage remains the single source of truth
+
+2. Transactions table behavior
+- default mode:
+  show only non-LOSS transactions
+- Show LOSS toggle ON:
+  show only LOSS transactions
+  hide all active transactions
+
+3. Toggle behavior
+- keep current Show LOSS toggle
+- make it a true mode switch:
+  OFF = active only
+  ON = LOSS only
+
+4. Visual clarity
+- LOSS rows should be clearly identifiable in the table
+- keep current design system
+- do not redesign the whole page
+
+5. Modal behavior
+- if Stage = LOSS, keep the UI simple
+- avoid broken weighted/forecast previews
+- make sure the form still behaves cleanly
+
+6. Important
+- do NOT create a separate status workflow
+- do NOT mix LOSS and active rows
+- do NOT redesign the Transactions screen
+- only update behavior and stage handling
 
 Output:
-1. file structure
-2. components implementation
+- files changed
+- updated modal behavior
+- updated Transactions behavior
+- how LOSS display now works

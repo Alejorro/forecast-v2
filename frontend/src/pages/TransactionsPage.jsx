@@ -5,7 +5,14 @@ import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
 import TransactionDrawer from '../components/TransactionDrawer'
 
-const STAGE_OPTIONS = ['Identified', 'Proposal 25', 'Proposal 50', 'Proposal 75', 'Won']
+const STAGE_OPTIONS = [
+  { value: 'Identified',  label: 'IDENTIFIED 10%' },
+  { value: 'Proposal 25', label: 'PROPOSAL 25%'   },
+  { value: 'Proposal 50', label: 'PROPOSAL 50%'   },
+  { value: 'Proposal 75', label: 'PROPOSAL 75%'   },
+  { value: 'Won',         label: 'WON 100%'       },
+  { value: 'LOSS',        label: 'LOSS'           },
+]
 const QUARTER_OPTIONS = ['Q1', 'Q2', 'Q3', 'Q4']
 
 function IconInbox() {
@@ -52,8 +59,6 @@ export default function TransactionsPage() {
   const [sellerFilter, setSellerFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
   const [quarterFilter, setQuarterFilter] = useState('')
-  const [showLoss, setShowLoss] = useState(false)
-
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -61,19 +66,22 @@ export default function TransactionsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
 
-  const hasFilters = search || brandFilter || sellerFilter || stageFilter || quarterFilter || showLoss
+  const hasFilters = search || brandFilter || sellerFilter || stageFilter || quarterFilter
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const params = { year }
-      if (brandFilter) params.brand_id = brandFilter
-      if (sellerFilter) params.seller_id = sellerFilter
-      if (stageFilter) params.stage_label = stageFilter
-      if (quarterFilter) params.quarter = quarterFilter.toLowerCase()
-      if (showLoss) params.include_loss = '1'
-      if (search) params.search = search
+      if (stageFilter === 'LOSS') {
+        params.include_loss = 'true'
+      } else {
+        if (brandFilter) params.brand_id = brandFilter
+        if (sellerFilter) params.seller_id = sellerFilter
+        if (stageFilter) params.stage_label = stageFilter
+        if (quarterFilter) params.quarter = quarterFilter.toLowerCase()
+        if (search) params.search = search
+      }
       const data = await getTransactions(params)
       setTransactions(Array.isArray(data) ? data : data?.transactions || [])
     } catch (err) {
@@ -81,7 +89,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [year, brandFilter, sellerFilter, stageFilter, quarterFilter, showLoss, search])
+  }, [year, brandFilter, sellerFilter, stageFilter, quarterFilter, search])
 
   useEffect(() => {
     const timer = setTimeout(fetchTransactions, search ? 300 : 0)
@@ -94,7 +102,6 @@ export default function TransactionsPage() {
     setSellerFilter('')
     setStageFilter('')
     setQuarterFilter('')
-    setShowLoss(false)
   }
 
   function openNewDrawer() { setEditingTransaction(null); setDrawerOpen(true) }
@@ -102,7 +109,7 @@ export default function TransactionsPage() {
   function closeDrawer() { setDrawerOpen(false); setEditingTransaction(null) }
   async function handleSaved() { closeDrawer(); await fetchTransactions() }
 
-  const isLoss = (tx) => tx.status_label === 'LOSS' || tx.stage_label === 'LOSS'
+  const isLoss = (tx) => tx.status_label === 'LOSS'
 
   return (
     <div>
@@ -138,23 +145,12 @@ export default function TransactionsPage() {
           </FilterSelect>
 
           <FilterSelect value={stageFilter} onChange={setStageFilter} placeholder="All stages">
-            {STAGE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            {STAGE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </FilterSelect>
 
           <FilterSelect value={quarterFilter} onChange={setQuarterFilter} placeholder="All quarters">
             {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
           </FilterSelect>
-
-          {/* Show LOSS toggle */}
-          <label className="flex items-center gap-2 cursor-pointer select-none flex-shrink-0">
-            <div
-              onClick={() => setShowLoss((v) => !v)}
-              className={`relative w-9 h-5 rounded-full transition-colors ${showLoss ? 'bg-blue-600' : 'bg-slate-300'}`}
-            >
-              <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${showLoss ? 'translate-x-4' : 'translate-x-0'}`} />
-            </div>
-            <span className="text-sm text-slate-600">Show LOSS</span>
-          </label>
 
           {/* Clear filters */}
           {hasFilters && (
@@ -282,40 +278,39 @@ export default function TransactionsPage() {
                         onClick={() => openEditDrawer(tx)}
                         className={[
                           'border-b border-slate-100 last:border-0 transition-colors duration-100 cursor-pointer',
-                          loss ? 'opacity-40' : '',
-                          isOdd ? 'bg-slate-50/70' : 'bg-white',
+                          loss ? 'bg-slate-50' : isOdd ? 'bg-slate-50/70' : 'bg-white',
                           'hover:bg-blue-50/50',
                         ].join(' ')}
                       >
-                        <td className="px-3 py-2 text-sm font-medium text-slate-900">
+                        <td className={`px-3 py-2 text-sm font-medium ${loss ? 'text-slate-400' : 'text-slate-900'}`}>
                           <span className="block truncate" title={tx.client_name}>{tx.client_name}</span>
                         </td>
-                        <td className="px-3 py-2 text-sm text-slate-400 border-l border-slate-200">
+                        <td className={`px-3 py-2 text-sm border-l border-slate-200 ${loss ? 'text-slate-300' : 'text-slate-400'}`}>
                           <span className="block truncate" title={tx.brand_name}>{tx.brand_name || ''}</span>
                         </td>
-                        <td className="px-3 py-2 text-sm text-slate-500 border-l border-slate-200">
+                        <td className={`px-3 py-2 text-sm border-l border-slate-200 ${loss ? 'text-slate-300' : 'text-slate-500'}`}>
                           <span className="block truncate" title={tx.seller_name}>{tx.seller_name || ''}</span>
                         </td>
-                        <td className="px-3 py-2 text-sm text-right font-medium text-slate-600 tabular-nums border-l border-slate-200">
+                        <td className={`px-3 py-2 text-sm text-right font-medium tabular-nums border-l border-slate-200 ${loss ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
                           {formatUSD(tx.tcv)}
                         </td>
                         <td className="px-3 py-2 text-center border-l border-slate-200">
-                          <StageBadge stage={tx.stage_label} />
+                          <StageBadge stage={loss ? 'LOSS' : tx.stage_label} />
                         </td>
-                        <td className="px-3 py-2 text-sm text-right font-bold text-slate-800 tabular-nums border-l border-slate-200">
-                          {formatUSD(tx.weighted_total)}
-                        </td>
-                        <td className={qCell}>
-                          {tx.q1_value ? <span className="text-slate-600">{formatUSD(tx.q1_value, false)}</span> : null}
+                        <td className={`px-3 py-2 text-sm text-right font-bold tabular-nums border-l border-slate-200 ${loss ? 'text-slate-400' : 'text-slate-800'}`}>
+                          {loss ? '—' : formatUSD(tx.weighted_total)}
                         </td>
                         <td className={qCell}>
-                          {tx.q2_value ? <span className="text-slate-600">{formatUSD(tx.q2_value, false)}</span> : null}
+                          {!loss && tx.q1_value ? <span className="text-slate-600">{formatUSD(tx.q1_value, false)}</span> : null}
                         </td>
                         <td className={qCell}>
-                          {tx.q3_value ? <span className="text-slate-600">{formatUSD(tx.q3_value, false)}</span> : null}
+                          {!loss && tx.q2_value ? <span className="text-slate-600">{formatUSD(tx.q2_value, false)}</span> : null}
                         </td>
                         <td className={qCell}>
-                          {tx.q4_value ? <span className="text-slate-600">{formatUSD(tx.q4_value, false)}</span> : null}
+                          {!loss && tx.q3_value ? <span className="text-slate-600">{formatUSD(tx.q3_value, false)}</span> : null}
+                        </td>
+                        <td className={qCell}>
+                          {!loss && tx.q4_value ? <span className="text-slate-600">{formatUSD(tx.q4_value, false)}</span> : null}
                         </td>
                       </tr>
                     )

@@ -18,7 +18,7 @@ function forecastForBrandYear(brand_id, year) {
     WHERE brand_id = ?
       AND CAST(strftime('%Y', due_date) AS INTEGER) = ?
       AND deleted_at IS NULL
-      AND (status_label IS NULL OR status_label != 'LOSS')
+      AND stage_label != 'LOSS'
   `).all(Number(brand_id), Number(year));
 
   const result = { q1: 0, q2: 0, q3: 0, q4: 0 };

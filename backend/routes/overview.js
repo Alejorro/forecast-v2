@@ -33,7 +33,7 @@ router.get('/', (req, res) => {
   const brandWon  = {};   // brand_id → fy won total
 
   for (const tx of activeTx) {
-    const isLoss = tx.status_label === 'LOSS';
+    const isLoss = tx.stage_label === 'LOSS';
     const pct    = STAGE_MAP[tx.stage_label] ?? 0;
     const wt     = tx.tcv * pct;
 
@@ -147,7 +147,7 @@ router.get('/', (req, res) => {
 
   // ── Top opportunities: top 5 active, not Won, not LOSS ───────────────────
   const top_opportunities = activeTx
-    .filter(tx => tx.stage_label !== 'Won' && tx.status_label !== 'LOSS')
+    .filter(tx => tx.stage_label !== 'Won' && tx.stage_label !== 'LOSS')
     .map(deriveTransaction)
     .sort((a, b) => b.weighted_total - a.weighted_total)
     .slice(0, 5);

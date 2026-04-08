@@ -24,7 +24,7 @@
  *
  * Transactions (rows 21+ of "PLAN 2026", plus all of "LOSS" sheet):
  *   col[0]  → client_name ("Cliente - Proyecto", not split)
- *   col[1]  → quarter (used to derive due_date; not stored)
+ *   col[1]  → quarter (Q1/Q2/Q3/Q4/1Q-4Q — stored as allocations)
  *   col[2]  → opportunity_odoo
  *   col[3]  → brand_opportunity_number
  *   col[5]  → seller_name (created on demand)
@@ -32,14 +32,27 @@
  *   col[7]  → sub_brand
  *   col[8]  → vendor_name (Marca)
  *   col[9]  → status (LOSS detection)
- *   col[13] → odd  → stage_label
+ *   col[13] → odd → stage_label
  *   col[14] → tcv
- *   col[15] → q1_weighted_value
- *   col[16] → q2_weighted_value
- *   col[17] → q3_weighted_value
- *   col[18] → q4_weighted_value
  *   col[22] → notes (Descripcion)
  *   col[23] → invoice_number
+ *
+ * NOTE: Columns col[15]–col[18] (Excel weighted quarter values) are IGNORED.
+ * weighted_total is always computed as TCV × stage_probability.
+ *
+ * Quarter mapping:
+ *   Q1    → allocation_q1=1, others=0
+ *   Q2    → allocation_q2=1, others=0
+ *   Q3    → allocation_q3=1, others=0
+ *   Q4    → allocation_q4=1, others=0
+ *   1Q-4Q → allocation_q1=0.25, allocation_q2=0.25, allocation_q3=0.25, allocation_q4=0.25
+ *
+ * Quarter → due_date (end of quarter):
+ *   Q1 / 1Q → 2026-03-31
+ *   Q2 / 2Q → 2026-06-30
+ *   Q3 / 3Q → 2026-09-30
+ *   Q4 / 4Q → 2026-12-31
+ *   1Q-4Q   → 2026-12-31 (end of year)
  *
  * LOSS sheet uses different layout (no Quarter column):
  *   col[0]  → client_name
@@ -48,14 +61,11 @@
  *   col[5]  → sub_brand
  *   col[6]  → vendor_name
  *   col[7]  → status (always "LOSS")
- *   col[11] → odd (always 0 for LOSS — defaulted to Identified)
  *   col[12] → tcv
  *   col[20] → notes
  *
- * Brand normalization:
- *   "NETWORKING/PRINTERS"  → "NETWORKING"
- *   "AUDIO/VIDEO + DC"     → "AUDIO/VIDEO+DC"
- *   All others kept as-is (INFRA, FORTINET, MICROINFORMATICA)
+ * LOSS sheet layout B (quarter inserted at col[1], everything else shifted +1):
+ *   Detection: if r[1] is a quarter string → Layout B
  *
  * Odd → stage_label:
  *   0.10 → Identified
@@ -63,13 +73,11 @@
  *   0.50 → Proposal 50
  *   0.75 → Proposal 75
  *   1.00 → Won
- *   other → skip (logged)
  *
- * Quarter → due_date (derived, not stored in Excel):
- *   1Q → 2026-03-31
- *   2Q → 2026-06-30
- *   3Q → 2026-09-30
- *   4Q → 2026-12-31
+ * Brand normalization:
+ *   "NETWORKING/PRINTERS"  → "NETWORKING"
+ *   "AUDIO/VIDEO + DC"     → "AUDIO/VIDEO+DC"
+ *   All others kept as-is (INFRA, FORTINET, MICROINFORMATICA)
  */
 
 import { createRequire } from 'module';
@@ -92,6 +100,14 @@ const DB_PATH    = resolve(__dirname, '../forecast.db');
 const YEAR       = 2026;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
+
+const STAGE_MAP = {
+  'Identified':   0.10,
+  'Proposal 25':  0.25,
+  'Proposal 50':  0.50,
+  'Proposal 75':  0.75,
+  'Won':          1.00,
+};
 
 const ODD_TO_STAGE = {
   0.10: 'Identified',
@@ -121,12 +137,38 @@ const PLAN_BRAND_MAP = {
   'MICROINFORMATICA':    'MICROINFORMATICA',
 };
 
-const QUARTER_DATE = {
-  '1Q': '2026-03-31',
-  '2Q': '2026-06-30',
-  '3Q': '2026-09-30',
-  '4Q': '2026-12-31',
-};
+/**
+ * Maps a quarter label to end-of-quarter due_date.
+ * Accepts both new format (Q1-Q4, 1Q-4Q) and old format (1Q-4Q) from Excel.
+ */
+function quarterToDueDate(quarter) {
+  switch (quarter) {
+    case 'Q1': case '1Q': return `${YEAR}-03-31`;
+    case 'Q2': case '2Q': return `${YEAR}-06-30`;
+    case 'Q3': case '3Q': return `${YEAR}-09-30`;
+    case 'Q4': case '4Q': return `${YEAR}-12-31`;
+    case '1Q-4Q':         return `${YEAR}-12-31`;
+    default:              return null;
+  }
+}
+
+/**
+ * Maps a quarter label to allocation values.
+ * Returns { allocation_q1, allocation_q2, allocation_q3, allocation_q4 } or null.
+ */
+function quarterToAllocations(quarter) {
+  switch (quarter) {
+    case 'Q1': case '1Q': return { allocation_q1: 1,    allocation_q2: 0,    allocation_q3: 0,    allocation_q4: 0    };
+    case 'Q2': case '2Q': return { allocation_q1: 0,    allocation_q2: 1,    allocation_q3: 0,    allocation_q4: 0    };
+    case 'Q3': case '3Q': return { allocation_q1: 0,    allocation_q2: 0,    allocation_q3: 1,    allocation_q4: 0    };
+    case 'Q4': case '4Q': return { allocation_q1: 0,    allocation_q2: 0,    allocation_q3: 0,    allocation_q4: 1    };
+    case '1Q-4Q':         return { allocation_q1: 0.25, allocation_q2: 0.25, allocation_q3: 0.25, allocation_q4: 0.25 };
+    default:              return null;
+  }
+}
+
+// Quarter strings recognized in Excel cells (both old and new formats)
+const QUARTER_STRINGS = new Set(['1Q', '2Q', '3Q', '4Q', 'Q1', 'Q2', 'Q3', 'Q4', '1Q-4Q']);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -192,6 +234,53 @@ function parsePlanTransactions(rows) {
     const clientRaw = str(r[0]);
     if (!clientRaw) { skipped.push({ row: rowNum, reason: 'Empty client name', raw: r[0] }); continue; }
 
+    // Detect LOSS rows from status column
+    const statusRaw   = str(r[9]);
+    const isLossRow   = statusRaw === 'LOSS';
+    const status_label = isLossRow ? 'LOSS' : null;
+
+    // LOSS rows in the plan sheet use relaxed validation
+    if (isLossRow) {
+      const brandRaw = normalizeBrand(r[6]);
+      if (!brandRaw) {
+        skipped.push({ row: rowNum, client: clientRaw, reason: `Unknown brand: "${r[6]}"` });
+        continue;
+      }
+
+      const tcv = toNum(r[14]);
+      // For LOSS: negative TCV is invalid, zero/missing is allowed
+      if (tcv < 0) {
+        skipped.push({ row: rowNum, client: clientRaw, reason: `Invalid TCV: ${r[14]}` });
+        continue;
+      }
+
+      const quarterRaw = str(r[1]);
+      const due_date   = quarterToDueDate(quarterRaw);
+
+      results.push({
+        client_name:              clientRaw,
+        project_name:             null,
+        seller_name:              str(r[5]) || 'Unknown',
+        brand_name:               brandRaw,
+        sub_brand:                str(r[7]),
+        vendor_name:              str(r[8]),
+        opportunity_odoo:         str(r[2]),
+        brand_opportunity_number: str(r[3]),
+        due_date,
+        stage_label:              'Identified',
+        status_label:             'LOSS',
+        tcv,
+        allocation_q1:            0,
+        allocation_q2:            0,
+        allocation_q3:            0,
+        allocation_q4:            0,
+        notes:                    str(r[22]),
+        invoice_number:           str(r[23]),
+      });
+      continue;
+    }
+
+    // Active deal: strict validation
     const brandRaw = normalizeBrand(r[6]);
     if (!brandRaw) {
       skipped.push({ row: rowNum, client: clientRaw, reason: `Unknown brand: "${r[6]}"` });
@@ -211,42 +300,19 @@ function parsePlanTransactions(rows) {
       continue;
     }
 
-    // Quarter values (already weighted in the Excel)
-    const q1w = toNum(r[15]);
-    const q2w = toNum(r[16]);
-    const q3w = toNum(r[17]);
-    const q4w = toNum(r[18]);
-    const weighted_total = q1w + q2w + q3w + q4w;
+    // Compute weighted_total from TCV × stage probability (do NOT trust Excel columns)
+    const stage_prob     = STAGE_MAP[stage_label];
+    const weighted_total = tcv * stage_prob;
 
-    if (weighted_total <= 0) {
-      skipped.push({ row: rowNum, client: clientRaw, reason: `weighted_total = 0 (all quarter values empty)` });
-      continue;
-    }
-
-    // Validate: weighted_total should ≈ TCV × odd (allow 1% tolerance)
-    const expected = tcv * odd;
-    if (expected > 0 && Math.abs(weighted_total - expected) / expected > 0.01) {
-      // Log but do not skip — use actual values from Excel
-      console.warn(`  [WARN] Row ${rowNum} "${clientRaw}": weighted_total ${weighted_total.toFixed(0)} ≠ TCV×odd ${expected.toFixed(0)} (diff: ${((Math.abs(weighted_total - expected) / expected) * 100).toFixed(1)}%)`);
-    }
-
-    const allocation_q1 = q1w / weighted_total;
-    const allocation_q2 = q2w / weighted_total;
-    const allocation_q3 = q3w / weighted_total;
-    const allocation_q4 = q4w / weighted_total;
-
-    // Allocation sum should be 1 (sanity check)
-    const allocSum = allocation_q1 + allocation_q2 + allocation_q3 + allocation_q4;
-    if (Math.abs(allocSum - 1.0) > 0.001) {
-      skipped.push({ row: rowNum, client: clientRaw, reason: `Allocation sum = ${allocSum.toFixed(4)}, not 1` });
-      continue;
-    }
-
-    const statusRaw = str(r[9]);
-    const status_label = statusRaw === 'LOSS' ? 'LOSS' : null;
-
+    // Resolve quarter from col[1]
     const quarterRaw = str(r[1]);
-    const due_date   = QUARTER_DATE[quarterRaw] ?? null;
+    if (!quarterRaw || !QUARTER_STRINGS.has(quarterRaw)) {
+      skipped.push({ row: rowNum, client: clientRaw, reason: `Unrecognized quarter value: "${r[1]}"` });
+      continue;
+    }
+
+    const alloc    = quarterToAllocations(quarterRaw);
+    const due_date = quarterToDueDate(quarterRaw);
 
     results.push({
       client_name:              clientRaw,
@@ -259,12 +325,12 @@ function parsePlanTransactions(rows) {
       brand_opportunity_number: str(r[3]),
       due_date,
       stage_label,
-      status_label,
+      status_label:             null,
       tcv,
-      allocation_q1,
-      allocation_q2,
-      allocation_q3,
-      allocation_q4,
+      allocation_q1:            alloc.allocation_q1,
+      allocation_q2:            alloc.allocation_q2,
+      allocation_q3:            alloc.allocation_q3,
+      allocation_q4:            alloc.allocation_q4,
       notes:                    str(r[22]),
       invoice_number:           str(r[23]),
     });
@@ -287,9 +353,7 @@ function parsePlanTransactions(rows) {
 //   [5] brand  [6] sub_brand  [7] vendor  [8] Status  [9] Tipo
 //   [10] Operacion  [11] Mayorista  [12] odd  [13] TCV  ... [21] notes  [22] invoice
 //
-// Detection: if r[1] is a quarter string ("1Q","2Q","3Q","4Q") → Layout B
-
-const QUARTER_STRINGS = new Set(['1Q', '2Q', '3Q', '4Q']);
+// Detection: if r[1] is a quarter string → Layout B
 
 function parseLossTransactions(rows) {
   const results = [];
@@ -324,19 +388,19 @@ function parseLossTransactions(rows) {
     }
 
     const tcv = toNum(r[tcvCol]);
+    // LOSS: negative TCV is invalid, zero/missing is allowed
     if (tcv < 0) {
       skipped.push({ sheet: 'LOSS', row: rowNum, client: clientRaw, reason: `Invalid TCV: ${r[tcvCol]}` });
       continue;
     }
 
-    // LOSS rows have odd=0 — use Identified as default stage_label
-    // (stage_label is required by schema; LOSS rows are excluded from forecast calcs)
+    // LOSS rows always get stage_label = Identified (excluded from forecast calcs)
     const stage_label  = 'Identified';
     const status_label = 'LOSS';
 
     // Derive due_date from Quarter if layout B has it
     const quarterRaw = layoutB ? str(r[1]) : null;
-    const due_date   = QUARTER_DATE[quarterRaw] ?? null;
+    const due_date   = quarterRaw ? quarterToDueDate(quarterRaw) : null;
 
     results.push({
       client_name:              clientRaw,
@@ -463,7 +527,11 @@ async function main() {
   const allTx      = [...txMain, ...txLoss];
   const allSkipped = [...skipMain, ...skipLoss];
 
-  console.log(`\nTransactions parsed: ${allTx.length} (${txMain.length} active + ${txLoss.length} LOSS)`);
+  // Count active vs LOSS
+  const activeTx = allTx.filter(t => t.status_label !== 'LOSS');
+  const lossTx   = allTx.filter(t => t.status_label === 'LOSS');
+
+  console.log(`\nTransactions parsed: ${allTx.length} (${activeTx.length} active + ${lossTx.length} LOSS)`);
   console.log(`Skipped rows: ${allSkipped.length}`);
   if (allSkipped.length) {
     console.log('\n── Skipped rows:');
@@ -478,7 +546,8 @@ async function main() {
     console.log('\n[DRY RUN] No changes written. Remove --dry-run to import.');
     console.log('\n── Sample transactions (first 5):');
     allTx.slice(0, 5).forEach((t, i) => {
-      console.log(`  ${i + 1}. ${t.client_name} | ${t.brand_name} | ${t.stage_label} | TCV=${t.tcv} | seller=${t.seller_name}`);
+      const wt = t.tcv * (STAGE_MAP[t.stage_label] ?? 0);
+      console.log(`  ${i + 1}. ${t.client_name} | ${t.brand_name} | ${t.stage_label} | TCV=${t.tcv} | weighted=${wt.toFixed(0)} | alloc=[${t.allocation_q1},${t.allocation_q2},${t.allocation_q3},${t.allocation_q4}] | seller=${t.seller_name}`);
     });
     return;
   }
@@ -515,7 +584,7 @@ async function main() {
   for (const p of plans) {
     const brand_id = upsertBrand(db, p.brand);
     insertPlan.run({ year: YEAR, brand_id, q1_plan: p.q1_plan, q2_plan: p.q2_plan, q3_plan: p.q3_plan, q4_plan: p.q4_plan });
-    console.log(`  ✓ ${p.brand}: Q1=${p.q1_plan.toLocaleString()} Q2=${p.q2_plan.toLocaleString()} Q3=${p.q3_plan.toLocaleString()} Q4=${p.q4_plan.toLocaleString()}`);
+    console.log(`  + ${p.brand}: Q1=${p.q1_plan.toLocaleString()} Q2=${p.q2_plan.toLocaleString()} Q3=${p.q3_plan.toLocaleString()} Q4=${p.q4_plan.toLocaleString()}`);
     plansImported++;
   }
 
@@ -584,7 +653,7 @@ async function main() {
   console.log(` Transactions skipped    : ${allSkipped.length}`);
   if (txErrors.length) {
     console.log(` Transactions errored    : ${txErrors.length}`);
-    txErrors.forEach(e => console.log(`  ✗ "${e.client}": ${e.error}`));
+    txErrors.forEach(e => console.log(`  x "${e.client}": ${e.error}`));
   }
   console.log('');
 
@@ -599,8 +668,8 @@ async function main() {
   }
 
   // Quick DB verification
-  const txCount   = db.prepare('SELECT COUNT(*) as n FROM transactions WHERE deleted_at IS NULL').get().n;
-  const planCount = db.prepare('SELECT COUNT(*) as n FROM plans').get().n;
+  const txCount    = db.prepare('SELECT COUNT(*) as n FROM transactions WHERE deleted_at IS NULL').get().n;
+  const planCount  = db.prepare('SELECT COUNT(*) as n FROM plans').get().n;
   const brandCount = db.prepare('SELECT COUNT(*) as n FROM brands').get().n;
   const sellerCount = db.prepare('SELECT COUNT(*) as n FROM sellers').get().n;
 
