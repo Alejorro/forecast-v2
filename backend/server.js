@@ -27,6 +27,7 @@ app.use(cors({
     'http://localhost:3000',
     'http://127.0.0.1:5173',
     'https://forecast.dot4sa.com.ar',
+    'https://forecast-v2-khaki.vercel.app',
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
