@@ -50,39 +50,32 @@ No extra steps. Every push to `main` updates production.
 
 ## Pre-deploy Checklist (code changes required — Claude handles these)
 
-- [ ] Replace `better-sqlite3` with `pg` in the backend
-- [ ] Rewrite `backend/db.js` — pg connection pool instead of SQLite singleton
-- [ ] Convert `backend/schema.sql` to PostgreSQL syntax (no `PRAGMA`, `SERIAL` instead of `AUTOINCREMENT`, `NOW()` instead of `datetime('now')`)
-- [ ] Convert all routes (`brands`, `overview`, `plans`, `sellers`, `summary`, `transactions`) from synchronous SQLite API to `async/await` with `pg`
-- [ ] Convert `enforceSellerIdentity` in `backend/routes/transactions.js` to async (uses synchronous SQLite today — must use `await pool.query()` after pg migration)
-- [ ] Update `backend/scripts/import-datadot.js` for PostgreSQL
-- [ ] Add `/health` endpoint to `backend/server.js`
-- [ ] Fix session cookie settings in `backend/server.js` for cross-origin production use:
-  ```js
-  cookie: {
-    httpOnly: true,
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    secure:   process.env.NODE_ENV === 'production',
-    maxAge:   8 * 60 * 60 * 1000,
-  }
-  ```
-- [ ] Update CORS in `backend/server.js` to allow production origin `https://forecast.dot4sa.com.ar` (keep localhost origins for dev)
-- [ ] Fix `frontend/src/utils/api.js` line 1: change hardcoded `http://localhost:3001` to use `VITE_API_URL` environment variable
-- [ ] Verify frontend login screen uses `credentials: 'include'` in all fetch calls (required for session cookies to be sent)
+- [x] Replace `better-sqlite3` with `pg` in the backend
+- [x] Rewrite `backend/db.js` — pg connection pool instead of SQLite singleton
+- [x] Convert `backend/schema.sql` to PostgreSQL syntax (no `PRAGMA`, `SERIAL` instead of `AUTOINCREMENT`, `NOW()` instead of `datetime('now')`)
+- [x] Convert all routes (`brands`, `overview`, `plans`, `sellers`, `summary`, `transactions`) from synchronous SQLite API to `async/await` with `pg`
+- [x] Convert `enforceSellerIdentity` in `backend/routes/transactions.js` to async
+- [x] Update `backend/scripts/import-datadot.js` for PostgreSQL
+- [x] Add `/health` endpoint to `backend/server.js`
+- [x] Fix session cookie settings in `backend/server.js` for cross-origin production use
+- [x] Update CORS in `backend/server.js` to allow production origin `https://forecast.dot4sa.com.ar` (and `https://forecast-v2-khaki.vercel.app` for testing)
+- [x] Fix `frontend/src/utils/api.js` line 1: now reads from `VITE_API_URL` with fallback to localhost
+- [x] Verify frontend login screen uses `credentials: 'include'` in all fetch calls
+- [x] Write `backend/scripts/migrate-sqlite-to-pg.js` — migrates SQLite data to PostgreSQL preserving manual transactions
 
 ---
 
 ## Deploy Steps (in order)
 
-1. **Backup** — copy `backend/forecast.db` to a safe location before touching anything
-2. **Code migration** — Claude handles all items in the pre-deploy checklist above
-3. **Railway setup** — create project, add PostgreSQL (Railway provides `DATABASE_URL` automatically), connect GitHub repo
-4. **Migrate data** — two options:
-   - If all data came from Excel imports: run the updated import script against Railway PostgreSQL
-   - If there are manually created transactions in the app: the SQLite DB must be exported and migrated directly to PostgreSQL (the import script only restores Excel data — manual transactions would be lost). Ask Claude to write a migration script from `forecast.db` → PostgreSQL before this step.
-5. **Deploy backend** — Railway auto-deploys from GitHub on push
-6. **Deploy frontend** — connect repo to Vercel, set `VITE_API_URL` env var
-7. **DNS** — add two CNAME records in the hosting panel (Claude provides exact values)
+1. **Backup** ✅ — `backend/forecast.db` copied to safe location
+2. **Code migration** ✅ — all items in pre-deploy checklist done (2026-04-08)
+3. **Railway setup** ✅ — project created, PostgreSQL added, GitHub repo connected, env vars set (`DATABASE_URL` auto-linked, `NODE_ENV=production`, `SESSION_SECRET` set)
+4. **Migrate data** ✅ — ran `backend/scripts/migrate-sqlite-to-pg.js --clear` with public DATABASE_URL. Migrated: 5 brands, 15 sellers, 5 plans, 308 transactions.
+5. **Deploy backend** ✅ — Railway auto-deploys from GitHub. Backend running at `https://forecast-v2-production.up.railway.app`
+6. **Deploy frontend** ✅ — Vercel connected to repo, `VITE_API_URL=https://api.dot4sa.com.ar` set, deployed at `https://forecast.dot4sa.com.ar`
+7. **DNS** ✅ — two CNAME records added in Ferozo (hosting provider):
+   - `forecast.dot4sa.com.ar` → `forecast-v2-khaki.vercel.app`
+   - `api.dot4sa.com.ar` → `afpyu8ii.up.railway.app` (Railway custom domain, DNS propagation pending as of 2026-04-10)
 
 ---
 
@@ -129,12 +122,15 @@ https://forecast.dot4sa.com.ar
 
 ## DNS (step 7)
 
-Two records to add in the hosting DNS panel. Claude will provide the exact values once Railway and Vercel deployments are live:
+Hosting provider: **Ferozo**. Two CNAME records added:
 
-| Subdomain | Type | Points to |
-|---|---|---|
-| `forecast` | CNAME | Vercel domain (provided after deploy) |
-| `api` | CNAME | Railway domain (provided after deploy) |
+| Subdomain | Type | Points to | Status |
+|---|---|---|---|
+| `forecast.dot4sa.com.ar` | CNAME | `forecast-v2-khaki.vercel.app` | ✅ Active |
+| `api.dot4sa.com.ar` | CNAME | `afpyu8ii.up.railway.app` | ⏳ Propagating |
+
+Also added TXT record for Railway domain verification:
+- `_railway-verify.api.dot4sa.com.ar` → `railway-verify=48f2cb61af958c34fc0384f19ea9946dd1d28283271d0ae3edf6033ca6...` (full value in Railway dashboard)
 
 ---
 
@@ -159,8 +155,10 @@ This must be changed to read from `import.meta.env.VITE_API_URL` before deployin
 
 ## Context for Next Session
 
-- Railway account: exists
-- GitHub repo: public (`https://github.com/Alejorro/forecast-v2`)
-- The migration has not started yet
-- Data is still being loaded into the local SQLite database
-- All code changes will be done by Claude before any deployment step
+- **Status: LIVE** — app is running at `https://forecast.dot4sa.com.ar`
+- Railway account: exists, project running
+- GitHub repo: `https://github.com/Alejorro/forecast-v2` — pushes to `main` auto-deploy both Railway (backend) and Vercel (frontend)
+- Database: PostgreSQL on Railway, fully migrated (308 transactions)
+- Pending: `api.dot4sa.com.ar` DNS propagation — once green in Railway, SSL activates automatically. Until then the backend custom domain works but may show cert errors.
+- CORS: currently allows `https://forecast.dot4sa.com.ar` and `https://forecast-v2-khaki.vercel.app` (Vercel preview URL, can be removed later)
+- Public DB connection string (for running scripts locally): `postgresql://postgres:***@mainline.proxy.rlwy.net:32450/railway`
