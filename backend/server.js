@@ -18,6 +18,7 @@ const app  = express();
 const PORT = process.env.PORT || 3001;
 
 app.set('etag', false);
+app.set('trust proxy', 1); // Required for Railway — allows secure cookies behind reverse proxy
 
 // ─── Middleware ──────────────────────────────────────────────────────────────
 
