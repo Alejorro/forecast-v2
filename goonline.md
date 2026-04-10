@@ -153,6 +153,51 @@ This must be changed to read from `import.meta.env.VITE_API_URL` before deployin
 
 ---
 
+## Plan-dev — Entorno Local de Desarrollo
+
+Setup completo para desarrollar y probar localmente sin afectar producción.
+**No afecta nada online** — la rama `dev` no se deploya, la DB local es independiente de Railway.
+
+### Paso 1 — Instalar PostgreSQL local
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+createdb forecast_dev
+```
+
+### Paso 2 — Crear la rama de desarrollo
+```bash
+cd /Users/kurai/Desktop/forecast-v2
+git checkout -b dev
+```
+
+### Paso 3 — Correr el backend local
+```bash
+cd backend
+DATABASE_URL=postgresql://localhost/forecast_dev npm run dev
+```
+
+### Paso 4 — Correr el frontend local
+```bash
+cd frontend
+npm run dev
+```
+El frontend en `localhost:5173` se conecta al backend en `localhost:3001` automáticamente (fallback en `api.js`).
+
+### Paso 5 — Poblar la DB local (opcional)
+Para tener los datos reales en local:
+```bash
+cd backend
+DATABASE_URL=postgresql://localhost/forecast_dev node scripts/migrate-sqlite-to-pg.js
+```
+
+### Flujo de trabajo
+- Desarrollás en la rama `dev`
+- Probás localmente
+- Cuando algo está listo → merge a `main` + push → va a producción automáticamente
+
+---
+
 ## Context for Next Session
 
 - **Status: LIVE** — app is running at `https://forecast.dot4sa.com.ar`
