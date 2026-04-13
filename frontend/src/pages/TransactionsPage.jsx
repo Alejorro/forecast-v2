@@ -162,6 +162,7 @@ export default function TransactionsPage() {
   async function handleSaved() { closeDrawer(); await fetchTransactions() }
 
   const isLoss = (tx) => tx.status_label === 'LOSS'
+  const isWon  = (tx) => tx.stage_label === 'Won'
 
   function handleSort(col) {
     setSort((prev) => {
@@ -184,11 +185,34 @@ export default function TransactionsPage() {
     q4:       (tx) => tx.q4_value ?? 0,
   }
 
+  // When sorting by stage the user controls order explicitly — no WON grouping.
+  // In all other cases (default or sorted by another column) WON rows are pinned last.
+  const wonGroupingActive = sort.col !== 'stage'
+
   const displayedTransactions = (() => {
-    if (!sort.col) return transactions
+    if (!sort.col) {
+      // Default view: non-WON first, WON last, original server order preserved within each group
+      return [...transactions].sort((a, b) => (isWon(a) ? 1 : 0) - (isWon(b) ? 1 : 0))
+    }
+
     const getValue = SORT_VALUE[sort.col]
     const mul = sort.dir === 'asc' ? 1 : -1
+
     return [...transactions].sort((a, b) => {
+      // Stage column: pure sort, no grouping
+      if (!wonGroupingActive) {
+        const av = getValue(a)
+        const bv = getValue(b)
+        if (av < bv) return -1 * mul
+        if (av > bv) return  1 * mul
+        return 0
+      }
+
+      // Any other column: WON priority, then field sort within group
+      const pa = isWon(a) ? 1 : 0
+      const pb = isWon(b) ? 1 : 0
+      if (pa !== pb) return pa - pb
+
       const av = getValue(a)
       const bv = getValue(b)
       if (av < bv) return -1 * mul
@@ -352,12 +376,16 @@ export default function TransactionsPage() {
                     const loss = isLoss(tx)
                     const isOdd = idx % 2 === 1
                     const qCell = 'px-2 py-2 text-xs text-right tabular-nums border-l border-slate-200'
+                    const wonSeparator = wonGroupingActive
+                      && isWon(tx)
+                      && (idx === 0 || !isWon(displayedTransactions[idx - 1]))
                     return (
                       <tr
                         key={tx.id}
                         onClick={canWrite ? () => openEditDrawer(tx) : undefined}
                         className={[
                           'border-b border-slate-100 last:border-0 transition-colors duration-100',
+                          wonSeparator ? 'border-t-2 border-t-slate-200' : '',
                           canWrite ? 'cursor-pointer' : '',
                           loss
                             ? 'bg-slate-50'

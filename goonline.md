@@ -217,6 +217,24 @@ Each migration is idempotent — safe to run more than once.
 
 ---
 
+## Backups
+
+Backup automático semanal via GitHub Actions (`.github/workflows/db-backup.yml`).
+
+- Corre cada domingo a las 03:00 UTC
+- Genera un `pg_dump` completo y lo guarda como artifact en GitHub Actions
+- Retención: 90 días por artifact — ventana rodante de ~13 backups simultáneos
+- Secret requerido: `RAILWAY_DATABASE_URL` en GitHub → Settings → Secrets → Actions
+
+**Trigger manual:** GitHub → Actions → Weekly DB Backup → Run workflow
+
+**Restaurar:**
+```bash
+psql <DATABASE_URL> < backup.sql
+```
+
+---
+
 ## Context for Next Session
 
 - **Status: LIVE** — app is running at `https://forecast.dot4sa.com.ar`
@@ -230,3 +248,5 @@ Each migration is idempotent — safe to run more than once.
 - `trust proxy` fix deployed to production (commit `92904de`) — fixes 403 errors caused by Railway reverse proxy not forwarding HTTPS to Express correctly
 - **Auth (2026-04-13):** usuarios reseteados — Admin + Milton, Claudio, Brian, Manuel, Mariano, JC (todos admin, password: alejocapo). Sellers eliminados del sistema de auth.
 - **UI (2026-04-13):** localización es-AR completa (`frontend/src/utils/t.js`), highlight color en transacciones, Q1-Q4 custom distribution.
+- **Sorting (2026-04-13):** WON deals aparecen al fondo por default en la tabla de transacciones. Sort por Stage desactiva el agrupamiento.
+- **Backups (2026-04-13):** backup semanal automático via GitHub Actions. Secret `RAILWAY_DATABASE_URL` debe estar cargado en GitHub.
