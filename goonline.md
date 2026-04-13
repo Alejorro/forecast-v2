@@ -204,7 +204,7 @@ Migrations that need to be run against Railway (production DB) before or after t
 
 | Migration | Script | Status |
 |---|---|---|
-| Add `highlight_color` column to `transactions` | `backend/scripts/migrate-add-highlight-color.js` | ⏳ Pending |
+| Add `highlight_color` column to `transactions` | `backend/scripts/migrate-add-highlight-color.js` | ✅ Done (2026-04-13) |
 
 **How to run:**
 ```bash
@@ -223,9 +223,10 @@ Each migration is idempotent — safe to run more than once.
 - Railway account: exists, project running
 - GitHub repo: `https://github.com/Alejorro/forecast-v2` — pushes to `main` auto-deploy both Railway (backend) and Vercel (frontend)
 - Database: PostgreSQL on Railway, fully migrated (308 transactions)
-- Pending: `api.dot4sa.com.ar` DNS propagation — once green in Railway, SSL activates automatically. Until then the backend custom domain works but may show cert errors.
-- CORS: currently allows `https://forecast.dot4sa.com.ar` and `https://forecast-v2-khaki.vercel.app` (Vercel preview URL, can be removed later)
+- DNS: `api.dot4sa.com.ar` y `forecast.dot4sa.com.ar` activos
+- CORS: currently allows `https://forecast.dot4sa.com.ar` y `https://forecast-v2-khaki.vercel.app` (Vercel preview URL, can be removed later)
 - Public DB connection string (for running scripts locally): `postgresql://postgres:***@mainline.proxy.rlwy.net:32450/railway`
 - `NODE_ENV=production` set in Railway — required for `sameSite:none` + `secure:true` cookies to work
 - `trust proxy` fix deployed to production (commit `92904de`) — fixes 403 errors caused by Railway reverse proxy not forwarding HTTPS to Express correctly
-- Dev branch has uncommitted changes: Q1-Q4 custom distribution UI, highlight_color feature, modal layout, naming unification. Must be committed and merged to `main` before they go live.
+- **Auth (2026-04-13):** usuarios reseteados — Admin + Milton, Claudio, Brian, Manuel, Mariano, JC (todos admin, password: alejocapo). Sellers eliminados del sistema de auth.
+- **UI (2026-04-13):** localización es-AR completa (`frontend/src/utils/t.js`), highlight color en transacciones, Q1-Q4 custom distribution.
