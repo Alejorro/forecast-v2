@@ -57,7 +57,7 @@
 ### Tech stack
 - **Frontend:** React + Vite + Tailwind CSS
 - **Backend:** Node.js + Express
-- **Database:** SQLite
+- **Database:** PostgreSQL (Railway in production, local instance in dev)
 - Architecture is intentionally simple. No microservices, no complex abstractions.
 
 ### Key principles from `CLAUDE.md`
@@ -115,6 +115,12 @@ These values are **computed on read** and never stored.
 - Default case: one quarter gets `1.0`, the rest get `0`.
 - Transactions may be split across any number of quarters.
 - Tolerance for import validation: ±0.001.
+
+### Q1-Q4 custom distribution
+
+When a transaction is assigned to quarter `Q1-Q4`, the user can manually distribute the TCV across any combination of Q1–Q4. The UI shows individual USD amount inputs per quarter. Allocations are derived as `amount / TCV` before saving. The sum of all amounts must equal TCV.
+
+Auto-balance rule (UX): if the sum is less than TCV by ≤ $999, the system auto-assigns the remainder to the last edited non-zero quarter (fallback: Q4 → Q3 → Q2 → Q1). If the difference exceeds $999, the user must adjust manually.
 
 ### Forecast scope
 
@@ -226,6 +232,7 @@ Null handling:
 | description | Optional |
 | invoice_number | Optional |
 | notes | Optional |
+| highlight_color | Optional; one of: `green`, `yellow`, `orange`, `red`; null = no highlight |
 | created_at | Timestamp |
 | updated_at | Timestamp |
 | deleted_at | Nullable; soft delete marker |
@@ -469,16 +476,13 @@ Allocation sum must equal 1.0 (±0.001 tolerance). Rows where all quarter values
 
 | Decision | Rationale |
 |---|---|
-| SQLite as database | Current choice for simplicity. **Planned migration to PostgreSQL** — see note below. |
+| PostgreSQL as database | Migrated from SQLite on 2026-04-08 for production deployment on Railway |
 | Node + Express backend | Lightweight, sufficient for this scope |
 | React + Vite + Tailwind frontend | Standard modern stack; no complex state management needed for this scale |
 | Derived values never stored | Prevents data inconsistency between inputs and computed results |
 | Soft delete (not physical) | Preserves audit trail; LOSS transactions remain queryable |
 | Right-side drawers for forms | User never loses list context during editing |
 | Global year selector | Scopes all screens consistently; eliminates per-screen year confusion |
-
-**Note — planned database migration:**
-The current database is SQLite. The planned future target is **PostgreSQL**. This migration has not started yet. When implementing anything database-related, avoid SQLite-specific syntax or behavior that would not be portable to PostgreSQL (e.g., use standard SQL types, avoid SQLite-only pragmas in permanent logic). Do not initiate this migration unless explicitly instructed.
 
 ---
 
@@ -502,22 +506,23 @@ The current database is SQLite. The planned future target is **PostgreSQL**. Thi
 - Import does not deduplicate transactions. Running without `--clear` appends rows on top of existing data.
 
 ### Project phase
-As of the last checkpoint (2026-04-07), the project is in an early phase. The full task list (backend schema, API endpoints, frontend screens) was planned but not yet confirmed complete. Assume the backend and frontend may be partially implemented.
+As of 2026-04-10 the app is live in production. Core backend and frontend are complete. Remaining pending items are in Section 14.
 
 ### Deployment
-- The database is not included in the repository. It must be recreated via the import script.
-- No database file should be committed to version control (`.db`, `.db-wal`, `.db-shm`, `.sqlite` are all gitignored).
+- The database lives on Railway (PostgreSQL). It is not in the repository.
+- Local dev uses a separate `forecast_dev` PostgreSQL database (see Section 16).
+- No database files should be committed to version control.
 
 ---
 
 ## 14. Implementation State
 
-> Last updated: 2026-04-08
+> Last updated: 2026-04-10
 
 ### What is built
 
 **Backend:**
-- [x] SQLite schema + migrations (`backend/schema.sql`, `backend/db.js`)
+- [x] PostgreSQL schema (`backend/schema.sql`, `backend/db.js` — pg pool)
 - [x] Transaction CRUD endpoints (GET list, GET by id, POST, PUT, DELETE soft, POST duplicate)
 - [x] Plan endpoints (GET all, GET by brand, PUT upsert)
 - [x] Brands endpoint (GET)
@@ -526,17 +531,37 @@ As of the last checkpoint (2026-04-07), the project is in an early phase. The fu
 - [x] Validation rules (stage_label, allocations sum, due_date)
 - [x] Excel import script (`backend/scripts/import-datadot.js`)
 - [x] Auth system (`backend/auth/users.js`, `backend/middleware/auth.js`, `backend/routes/auth.js`)
+- [x] `/health` endpoint
+- [x] CORS configured for production (`https://forecast.dot4sa.com.ar`)
+- [x] Session cookies configured for cross-origin production use (`sameSite: none`, `secure: true`)
+- [x] `trust proxy` fix — `app.set('trust proxy', 1)` in `server.js` (required for Railway reverse proxy + secure cookies, commit `92904de`)
+- [x] SQLite → PostgreSQL migration script (`backend/scripts/migrate-sqlite-to-pg.js`)
+- [x] `highlight_color` field on transactions (`TEXT`, nullable, values: `green/yellow/orange/red`)
+- [x] Migration script for `highlight_color` column (`backend/scripts/migrate-add-highlight-color.js`)
 
 **Frontend:**
-- Status unknown — verify against codebase
+- [x] Login screen with `credentials: 'include'`
+- [x] `VITE_API_URL` env var support in `frontend/src/utils/api.js`
+- [x] Q1-Q4 custom distribution UI — per-quarter USD amount inputs with auto-balance logic
+- [x] Naming unified: `1Q-4Q` → `Q1-Q4` throughout frontend and `backend/lib/forecast.js`
+- [x] Highlight color field in transaction drawer — toggle dots (green/yellow/orange/red, click to select/deselect)
+- [x] Transaction row highlight — colored background based on `highlight_color` (overrides striping, not LOSS rows)
+
+**Deployment (completed 2026-04-08):**
+- [x] App live at `https://forecast.dot4sa.com.ar`
+- [x] Backend on Railway (`https://forecast-v2-production.up.railway.app`)
+- [x] Frontend on Vercel (`https://forecast-v2-khaki.vercel.app`)
+- [x] DNS configured via Ferozo (CNAME records for both subdomains)
+- [x] PostgreSQL on Railway, 308 transactions migrated
+- [x] Local dev environment set up (PostgreSQL@16 local + `dev` branch)
+- [x] `NODE_ENV=production` set in Railway env vars (required for cross-origin secure cookies)
 
 ### What is pending
 
 - [ ] Excel import endpoint (UI-triggered via API, not just CLI script)
-- [x] Frontend auth integration (login screen built)
-- [ ] Frontend: verify `credentials: 'include'` on all fetch calls
-- [ ] SQLite → PostgreSQL migration (see goonline.md)
-- [ ] Production deployment (see goonline.md)
+- [ ] `api.dot4sa.com.ar` DNS full propagation + SSL activation (Railway custom domain)
+- [ ] Run `highlight_color` DB migration against Railway production: `DATABASE_URL=<railway-url> node backend/scripts/migrate-add-highlight-color.js`
+- [ ] Merge `dev` branch to `main` (contains: Q1-Q4 UI, highlight_color, modal layout, Q1-Q4 naming rename)
 
 ---
 
@@ -564,27 +589,66 @@ forecast-v2/
 
 ## 16. How to Run
 
+### Local development (every session)
+
+Requires 3 terminal tabs open simultaneously:
+
+**Tab 1 — PostgreSQL** (stays open):
 ```bash
-# Backend
-cd backend
-npm install
-npm run dev        # node --watch server.js, port 3001
-
-# Frontend
-cd frontend
-npm install
-npm run dev        # Vite, port 5173
-
-# Import Excel data
-cd backend
-node scripts/import-datadot.js DATADOT.xlsx
+/opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16
 ```
 
-**Environment variables (backend):**
+**Tab 2 — Backend** (stays open):
+```bash
+cd /Users/kurai/Desktop/forecast-v2/backend
+DATABASE_URL=postgresql://localhost/forecast_dev npm run dev
+# Runs on port 3001
 ```
-SESSION_SECRET=<any string, optional in dev>
-DB_PATH=<optional, defaults to backend/forecast.db>
-PORT=<optional, defaults to 3001>
+
+**Tab 3 — Frontend** (stays open):
+```bash
+cd /Users/kurai/Desktop/forecast-v2/frontend
+npm run dev
+# Runs on port 5173
+```
+
+Open `http://localhost:5173` in the browser.
+
+### First-time local setup
+
+```bash
+# Install and start PostgreSQL
+brew install postgresql@16
+/opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16  # in one tab
+createdb forecast_dev  # in another tab
+
+# Create dev branch
+cd /Users/kurai/Desktop/forecast-v2
+git checkout -b dev
+
+# Populate local DB with production data (from SQLite backup)
+cd backend
+DATABASE_URL=postgresql://localhost/forecast_dev node scripts/migrate-sqlite-to-pg.js
+```
+
+### Import Excel data (local)
+```bash
+cd backend
+DATABASE_URL=postgresql://localhost/forecast_dev node scripts/import-datadot.js DATADOT.xlsx
+```
+
+### Dev → Production workflow
+
+```bash
+# Work on dev branch, commit freely
+git add <files>
+git commit -m "description"
+
+# When ready to go to production
+git checkout main
+git merge dev
+git push   # Railway and Vercel auto-deploy on push to main
+git checkout dev
 ```
 
 ---

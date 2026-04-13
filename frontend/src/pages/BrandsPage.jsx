@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext'
 import { getBrands, getBrandSummary } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
+import t from '../utils/t'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -136,7 +137,7 @@ function PipelineList({ stages, loading }) {
     )
   }
   if (!stages || stages.length === 0) {
-    return <p className="text-sm text-slate-400 py-4">No pipeline data.</p>
+    return <p className="text-sm text-slate-400 py-4">{t.brands.noPipelineData}</p>
   }
 
   const total = stages.reduce((s, d) => s + d.weighted_total, 0)
@@ -172,7 +173,7 @@ function PipelineList({ stages, loading }) {
         )
       })}
       <div className="pt-2 border-t border-slate-100 flex justify-between">
-        <span className="text-xs text-slate-500">Total weighted</span>
+        <span className="text-xs text-slate-500">{t.brands.totalWeighted}</span>
         <span className="text-xs font-semibold text-slate-800 tabular-nums">{formatUSD(total)}</span>
       </div>
     </div>
@@ -190,7 +191,7 @@ function TopTransactionsTable({ rows, loading }) {
     )
   }
   if (!rows || rows.length === 0) {
-    return <p className="text-sm text-slate-400 py-4">No active transactions.</p>
+    return <p className="text-sm text-slate-400 py-4">{t.brands.noTransactions}</p>
   }
 
   return (
@@ -198,11 +199,11 @@ function TopTransactionsTable({ rows, loading }) {
       <table className="w-full min-w-[560px]">
         <thead>
           <tr className="border-b border-slate-200">
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Client</th>
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Seller</th>
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Stage</th>
-            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">TCV</th>
-            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Weighted</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.brands.columns.client}</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.brands.columns.seller}</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.brands.columns.stage}</th>
+            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.tcv}</th>
+            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.weighted}</th>
           </tr>
         </thead>
         <tbody>
@@ -274,8 +275,8 @@ export default function BrandsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-[#0F172A]">Brands</h1>
-        <p className="text-sm text-[#64748B] mt-0.5">Forecast performance by brand for {year}</p>
+        <h1 className="text-xl font-semibold text-[#0F172A]">{t.brands.title}</h1>
+        <p className="text-sm text-[#64748B] mt-0.5">{t.brands.subtitle(year)}</p>
       </div>
 
       {error && (
@@ -313,14 +314,14 @@ export default function BrandsPage() {
 
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="FY Plan"             value={summary?.plan}     loading={loading} />
-        <KPICard label="Weighted Forecast"   value={summary?.forecast} loading={loading} />
-        <KPICard label="Won"                 value={summary?.won}      loading={loading} color="text-[#16A34A]" />
-        <KPICard label="Gap (Plan − Forecast)" value={summary?.gap}   loading={loading} color={gapColor} />
+        <KPICard label={t.brands.kpi.fyPlan}           value={summary?.plan}     loading={loading} />
+        <KPICard label={t.brands.kpi.weightedForecast} value={summary?.forecast} loading={loading} />
+        <KPICard label={t.brands.kpi.won}              value={summary?.won}      loading={loading} color="text-[#16A34A]" />
+        <KPICard label={t.brands.kpi.gap}              value={summary?.gap}      loading={loading} color={gapColor} />
       </div>
 
       {/* Quarterly breakdown — full width */}
-      <Section title="Quarterly breakdown">
+      <Section title={t.brands.sections.quarterlyBreakdown}>
         <QuarterlyTable
           rows={summary?.quarterly_breakdown}
           fy={summary}
@@ -331,13 +332,13 @@ export default function BrandsPage() {
       {/* Pipeline + Top transactions — two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
         <div className="lg:col-span-2">
-          <Section title="Pipeline by stage">
+          <Section title={t.brands.sections.pipelineByStage}>
             <PipelineList stages={summary?.pipeline_by_stage} loading={loading} />
           </Section>
         </div>
 
         <div className="lg:col-span-3">
-          <Section title="Top transactions">
+          <Section title={t.brands.sections.topTransactions}>
             <TopTransactionsTable rows={summary?.top_transactions} loading={loading} />
           </Section>
         </div>

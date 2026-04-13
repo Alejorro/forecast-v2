@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react'
+import t from '../utils/t'
 
 // ──────────────────────────────────────────────
 // Sub-components
@@ -68,16 +69,16 @@ export default function ImportPage() {
     <div className="max-w-4xl mx-auto">
       {/* Page header */}
       <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-900">Import</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t.import.title}</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Upload an Excel file to import plans and transactions into the system.
+          {t.import.subtitle}
         </p>
       </div>
 
       {/* ── Upload card ── */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6 mb-5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">
-          File
+          {t.import.fileSection}
         </h2>
 
         {file ? (
@@ -96,7 +97,7 @@ export default function ImportPage() {
               onClick={handleClear}
               className="flex-shrink-0 text-xs text-slate-400 hover:text-red-500 transition-colors"
             >
-              Remove
+              {t.import.remove}
             </button>
           </div>
         ) : (
@@ -117,10 +118,10 @@ export default function ImportPage() {
             <span className="text-2xl text-slate-300">↑</span>
             <div className="text-center">
               <p className="text-sm font-medium text-slate-700">
-                Drop an .xlsx file here, or{' '}
-                <span className="text-blue-600">browse</span>
+                {t.import.dropPrompt}{' '}
+                <span className="text-blue-600">{t.import.browse}</span>
               </p>
-              <p className="text-xs text-slate-400 mt-1">Accepted format: .xlsx</p>
+              <p className="text-xs text-slate-400 mt-1">{t.import.acceptedFormat}</p>
             </div>
           </div>
         )}
@@ -136,7 +137,7 @@ export default function ImportPage() {
         {/* Action row */}
         <div className="flex items-center justify-between mt-4">
           <p className="text-xs text-slate-400">
-            The file will be validated before any data is written.
+            {t.import.validationNote}
           </p>
           <button
             disabled={!isReady}
@@ -147,7 +148,7 @@ export default function ImportPage() {
                 : 'text-slate-300 bg-slate-100 cursor-not-allowed',
             ].join(' ')}
           >
-            Validate file
+            {t.import.validateButton}
           </button>
         </div>
       </div>
@@ -155,33 +156,31 @@ export default function ImportPage() {
       {/* ── Validation summary card ── */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6 mb-5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-5">
-          Validation summary
+          {t.import.validationTitle}
         </h2>
 
         {hasResults ? (
           /* Populated state — shown after backend validates */
           <div className="grid grid-cols-4 gap-6 pb-5 mb-5 border-b border-slate-100">
-            <StatBlock label="Plans" value="12" color="text-slate-900" />
-            <StatBlock label="Transactions" value="84" color="text-slate-900" />
-            <StatBlock label="Skipped rows" value="3" color="text-amber-600" />
-            <StatBlock label="Errors" value="1" color="text-red-600" />
+            <StatBlock label={t.import.statLabels.plans}        value="12" color="text-slate-900" />
+            <StatBlock label={t.import.statLabels.transactions}  value="84" color="text-slate-900" />
+            <StatBlock label={t.import.statLabels.skipped}      value="3"  color="text-amber-600" />
+            <StatBlock label={t.import.statLabels.errors}       value="1"  color="text-red-600" />
           </div>
         ) : (
           /* Empty state */
           <div className="grid grid-cols-4 gap-6 pb-5 mb-5 border-b border-slate-100">
-            <StatBlock label="Plans" value="—" color="text-slate-300" />
-            <StatBlock label="Transactions" value="—" color="text-slate-300" />
-            <StatBlock label="Skipped rows" value="—" color="text-slate-300" />
-            <StatBlock label="Errors" value="—" color="text-slate-300" />
+            <StatBlock label={t.import.statLabels.plans}       value="—" color="text-slate-300" />
+            <StatBlock label={t.import.statLabels.transactions} value="—" color="text-slate-300" />
+            <StatBlock label={t.import.statLabels.skipped}     value="—" color="text-slate-300" />
+            <StatBlock label={t.import.statLabels.errors}      value="—" color="text-slate-300" />
           </div>
         )}
 
         {/* Import action row */}
         <div className="flex items-center justify-between">
           <p className="text-xs text-slate-400">
-            {hasResults
-              ? 'Rows with errors will be skipped. Valid rows only will be imported.'
-              : 'Run validation first to see results.'}
+            {hasResults ? t.import.importNote : t.import.runFirst}
           </p>
           <button
             disabled={!hasResults}
@@ -192,7 +191,7 @@ export default function ImportPage() {
                 : 'text-slate-300 bg-slate-100 cursor-not-allowed',
             ].join(' ')}
           >
-            Import valid rows
+            {t.import.importAction}
           </button>
         </div>
       </div>
@@ -200,7 +199,7 @@ export default function ImportPage() {
       {/* ── Import log card ── */}
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-6">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-4">
-          Log
+          {t.import.logTitle}
         </h2>
 
         {hasResults ? (
@@ -213,7 +212,7 @@ export default function ImportPage() {
           </div>
         ) : (
           <p className="text-sm text-slate-400 py-6 text-center">
-            No results yet. Upload a file and run validation.
+            {t.import.noResultsYet}
           </p>
         )}
       </div>

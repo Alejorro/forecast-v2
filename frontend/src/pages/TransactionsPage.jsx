@@ -5,6 +5,7 @@ import { getTransactions } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
 import TransactionDrawer from '../components/TransactionDrawer'
+import t from '../utils/t'
 
 const STAGE_OPTIONS = [
   { value: 'Identified',  label: 'IDENTIFIED 10%' },
@@ -45,6 +46,13 @@ function FilterSelect({ value, onChange, children, placeholder }) {
       {children}
     </select>
   )
+}
+
+const HIGHLIGHT_BG = {
+  green:  'bg-green-200',
+  yellow: 'bg-yellow-200',
+  orange: 'bg-orange-200',
+  red:    'bg-red-200',
 }
 
 const STAGE_PERCENT = {
@@ -192,7 +200,7 @@ export default function TransactionsPage() {
   return (
     <div>
       {/* Page title */}
-      <h1 className="text-xl font-semibold text-slate-900 mb-5">Transactions</h1>
+      <h1 className="text-xl font-semibold text-slate-900 mb-5">{t.transactions.title}</h1>
 
       {/* Filter bar */}
       <div className="bg-slate-50 border border-slate-300 rounded-lg px-4 py-3 mb-4">
@@ -207,26 +215,26 @@ export default function TransactionsPage() {
             </svg>
             <input
               type="text"
-              placeholder="Search client or project..."
+              placeholder={t.transactions.searchPlaceholder}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full border border-slate-300 rounded-md pl-9 pr-3 py-2 text-sm bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
 
-          <FilterSelect value={brandFilter} onChange={setBrandFilter} placeholder="All brands">
+          <FilterSelect value={brandFilter} onChange={setBrandFilter} placeholder={t.transactions.allBrands}>
             {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </FilterSelect>
 
-          <FilterSelect value={sellerFilter} onChange={setSellerFilter} placeholder="All sellers">
+          <FilterSelect value={sellerFilter} onChange={setSellerFilter} placeholder={t.transactions.allSellers}>
             {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </FilterSelect>
 
-          <FilterSelect value={stageFilter} onChange={setStageFilter} placeholder="All stages">
+          <FilterSelect value={stageFilter} onChange={setStageFilter} placeholder={t.transactions.allStages}>
             {STAGE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </FilterSelect>
 
-          <FilterSelect value={quarterFilter} onChange={setQuarterFilter} placeholder="All quarters">
+          <FilterSelect value={quarterFilter} onChange={setQuarterFilter} placeholder={t.transactions.allQuarters}>
             {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
           </FilterSelect>
 
@@ -239,7 +247,7 @@ export default function TransactionsPage() {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
-              Clear filters
+              {t.transactions.clearFilters}
             </button>
           )}
         </div>
@@ -248,13 +256,7 @@ export default function TransactionsPage() {
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-5">
         <p className="text-sm text-slate-500">
-          {loading ? 'Loading...' : (
-            <>
-              <span className="font-semibold text-slate-800">{transactions.length}</span>
-              {' transaction'}
-              {transactions.length !== 1 ? 's' : ''}
-            </>
-          )}
+          {loading ? t.loading : t.transactions.count(transactions.length)}
         </p>
         {canWrite && (
           <button
@@ -264,7 +266,7 @@ export default function TransactionsPage() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
             </svg>
-            New Transaction
+            {t.transactions.newTransaction}
           </button>
         )}
       </div>
@@ -275,7 +277,7 @@ export default function TransactionsPage() {
           <div className="px-6 py-12 text-center">
             <p className="text-sm text-red-500">{error}</p>
             <button onClick={fetchTransactions} className="mt-3 text-sm text-blue-600 hover:underline">
-              Retry
+              {t.retry}
             </button>
           </div>
         ) : (
@@ -295,12 +297,12 @@ export default function TransactionsPage() {
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <SortableTH col="client"   label="Client"   sortState={sort} onSort={handleSort} className={TH} />
-                  <SortableTH col="brand"    label="Brand"    sortState={sort} onSort={handleSort} className={TH_SEP} />
-                  <SortableTH col="seller"   label="Seller"   sortState={sort} onSort={handleSort} className={TH_SEP} />
-                  <SortableTH col="tcv"      label="TCV"      sortState={sort} onSort={handleSort} className={TH_SEP} />
-                  <SortableTH col="stage"    label="Stage"    sortState={sort} onSort={handleSort} className={TH_SEP} />
-                  <SortableTH col="weighted" label="Weighted" sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="client"   label={t.transactions.columns.client}   sortState={sort} onSort={handleSort} className={TH} />
+                  <SortableTH col="brand"    label={t.transactions.columns.brand}    sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="seller"   label={t.transactions.columns.seller}   sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="tcv"      label={t.transactions.columns.tcv}      sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="stage"    label={t.transactions.columns.stage}    sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <SortableTH col="weighted" label={t.transactions.columns.weighted} sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="q1"       label="Q1"       sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="q2"       label="Q2"       sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="q3"       label="Q3"       sortState={sort} onSort={handleSort} className={TH_SEP} />
@@ -311,7 +313,7 @@ export default function TransactionsPage() {
                 {loading && transactions.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="px-6 py-20 text-center text-sm text-slate-400">
-                      Loading transactions...
+                      {t.transactions.loadingList}
                     </td>
                   </tr>
                 ) : transactions.length === 0 ? (
@@ -321,17 +323,15 @@ export default function TransactionsPage() {
                         {hasFilters ? <IconSearch /> : <IconInbox />}
                         <div>
                           <p className="text-sm font-semibold text-slate-800">
-                            {hasFilters ? 'No transactions match your filters.' : 'No transactions yet'}
+                            {hasFilters ? t.transactions.noMatchFilters : t.transactions.emptyTitle}
                           </p>
                           <p className="text-sm text-slate-400 mt-1">
-                            {hasFilters
-                              ? 'Try adjusting your search or filter criteria.'
-                              : 'Create your first transaction to start tracking forecast.'}
+                            {hasFilters ? t.transactions.noMatchHint : t.transactions.emptyHint}
                           </p>
                         </div>
                         {hasFilters ? (
                           <button onClick={clearFilters} className="text-sm text-blue-600 hover:underline mt-1">
-                            Clear filters
+                            {t.transactions.clearFilters}
                           </button>
                         ) : canWrite ? (
                           <button
@@ -341,7 +341,7 @@ export default function TransactionsPage() {
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                             </svg>
-                            New Transaction
+                            {t.transactions.newTransaction}
                           </button>
                         ) : null}
                       </div>
@@ -359,7 +359,11 @@ export default function TransactionsPage() {
                         className={[
                           'border-b border-slate-100 last:border-0 transition-colors duration-100',
                           canWrite ? 'cursor-pointer' : '',
-                          loss ? 'bg-slate-50' : isOdd ? 'bg-slate-50/70' : 'bg-white',
+                          loss
+                            ? 'bg-slate-50'
+                            : tx.highlight_color && HIGHLIGHT_BG[tx.highlight_color]
+                            ? HIGHLIGHT_BG[tx.highlight_color]
+                            : isOdd ? 'bg-slate-50/70' : 'bg-white',
                           canWrite ? 'hover:bg-blue-50/50' : '',
                         ].join(' ')}
                       >
