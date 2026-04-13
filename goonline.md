@@ -198,6 +198,25 @@ DATABASE_URL=postgresql://localhost/forecast_dev node scripts/migrate-sqlite-to-
 
 ---
 
+## Pending DB Migrations
+
+Migrations that need to be run against Railway (production DB) before or after the next merge to `main`.
+
+| Migration | Script | Status |
+|---|---|---|
+| Add `highlight_color` column to `transactions` | `backend/scripts/migrate-add-highlight-color.js` | ⏳ Pending |
+
+**How to run:**
+```bash
+cd /Users/kurai/Desktop/forecast-v2/backend
+DATABASE_URL=<railway-url> node scripts/migrate-add-highlight-color.js
+```
+
+The Railway DB URL is in the Railway dashboard → project → PostgreSQL → Connect → `DATABASE_URL`.
+Each migration is idempotent — safe to run more than once.
+
+---
+
 ## Context for Next Session
 
 - **Status: LIVE** — app is running at `https://forecast.dot4sa.com.ar`
@@ -207,3 +226,6 @@ DATABASE_URL=postgresql://localhost/forecast_dev node scripts/migrate-sqlite-to-
 - Pending: `api.dot4sa.com.ar` DNS propagation — once green in Railway, SSL activates automatically. Until then the backend custom domain works but may show cert errors.
 - CORS: currently allows `https://forecast.dot4sa.com.ar` and `https://forecast-v2-khaki.vercel.app` (Vercel preview URL, can be removed later)
 - Public DB connection string (for running scripts locally): `postgresql://postgres:***@mainline.proxy.rlwy.net:32450/railway`
+- `NODE_ENV=production` set in Railway — required for `sameSite:none` + `secure:true` cookies to work
+- `trust proxy` fix deployed to production (commit `92904de`) — fixes 403 errors caused by Railway reverse proxy not forwarding HTTPS to Express correctly
+- Dev branch has uncommitted changes: Q1-Q4 custom distribution UI, highlight_color feature, modal layout, naming unification. Must be committed and merged to `main` before they go live.

@@ -19,7 +19,7 @@ export const VALID_STAGES = Object.keys(STAGE_MAP);
  * Valid quarter values for a transaction.
  * 1Q-4Q means the deal spans all four quarters equally.
  */
-export const VALID_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4', '1Q-4Q'];
+export const VALID_QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4', 'Q1-Q4'];
 
 /**
  * Converts a quarter string to allocation values.
@@ -33,7 +33,7 @@ export function quarterToAllocations(quarter) {
     case 'Q2':   return { allocation_q1: 0, allocation_q2: 1, allocation_q3: 0, allocation_q4: 0 };
     case 'Q3':   return { allocation_q1: 0, allocation_q2: 0, allocation_q3: 1, allocation_q4: 0 };
     case 'Q4':   return { allocation_q1: 0, allocation_q2: 0, allocation_q3: 0, allocation_q4: 1 };
-    case '1Q-4Q': return { allocation_q1: 0.25, allocation_q2: 0.25, allocation_q3: 0.25, allocation_q4: 0.25 };
+    case 'Q1-Q4': return { allocation_q1: 0.25, allocation_q2: 0.25, allocation_q3: 0.25, allocation_q4: 0.25 };
     default:     return null;
   }
 }
@@ -54,7 +54,7 @@ export function inferQuarter(row) {
   if (q1 === 0 && q2 === 0 && q3 === 0 && q4 === 1) return 'Q4';
   // Equal split within 0.001 tolerance
   if (Math.abs(q1 - 0.25) < 0.001 && Math.abs(q2 - 0.25) < 0.001 &&
-      Math.abs(q3 - 0.25) < 0.001 && Math.abs(q4 - 0.25) < 0.001) return '1Q-4Q';
+      Math.abs(q3 - 0.25) < 0.001 && Math.abs(q4 - 0.25) < 0.001) return 'Q1-Q4';
   return null;
 }
 

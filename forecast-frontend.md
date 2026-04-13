@@ -243,6 +243,7 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 | Status | Only visible when LOSS toggle is on |
 | Actions | Edit / Duplicate / Delete icons |
 
+- **Row highlight:** If a transaction has a `highlight_color` set, its row gets a soft rgba background + a 3px left border in the same hue. Colors: green `rgba(34,197,94,0.10)` / yellow `rgba(234,179,8,0.12)` / orange `rgba(249,115,22,0.12)` / red `rgba(239,68,68,0.10)`. Border at 40% opacity. Applied via inline `style`, not Tailwind classes. LOSS rows always use `bg-slate-50` regardless of `highlight_color`. Dot selectors in the drawer use the same exact `rgb()` values for visual consistency.
 - LOSS rows appear dimmed (reduced opacity) when the toggle is on.
 
 **Transaction Drawer (slides from right)**
@@ -250,13 +251,15 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 | Field | Notes |
 |---|---|
 | Client | Required |
+| Highlight color | 4 colored dots (green/yellow/orange/red) shown directly below the Client field. Click to select; click again to deselect. Sets `highlight_color` on the transaction. |
 | Brand | Required (dropdown from brand list) |
 | Seller | Required (dropdown from seller list) |
 | TCV | USD, required |
 | Stage | Required; dropdown with 5 options |
 | Status | Optional; only valid value is LOSS |
 | Year | Defaults to the global year selector value |
-| Q1–Q4 Allocation | 0–1 each; must sum to 1.0 |
+| Quarter | Q1 / Q2 / Q3 / Q4 / Q1-Q4 |
+| Q1-Q4 distribution | When Q1-Q4 is selected: 4 USD amount inputs appear (Q1/Q2/Q3/Q4). Pre-filled with TCV/4. Sum must equal TCV. Auto-balance on blur or via "Auto completar" button (max auto-adjust: $999). Adjusted quarter is highlighted in amber. |
 | Notes | Optional |
 
 - **Live allocation preview** below the allocation fields: `Q1: $X | Q2: $X | Q3: $X | Q4: $X | Total: $X`
@@ -420,7 +423,22 @@ Not specified. The application is an internal desktop business tool. No explicit
 
 ---
 
-## 12. Existing Components
+## 12. Localization
+
+The UI is localized to Spanish (es-AR). All display strings are centralized in `frontend/src/utils/t.js` — a single exported object with keys grouped by page/component.
+
+### Rules
+- General UI text, buttons, labels, navigation, form fields, system messages → Spanish
+- Corporate/industry terms kept in English: Brand, Sub Brand, TCV, Weighted, Forecast, Pipeline, Won, Gap, FY, Plan, Quarter, Odoo Opportunity, Brand Opp #, LOSS, stage values (IDENTIFIED, PROPOSAL, WON)
+- Stage label → "Estado" (column header), but stage values remain in English
+- "Quarter" → kept as "Quarter" (not translated to "Trimestre")
+
+### Usage
+Import `t` from `'../utils/t'` in any component that needs translated strings. The object is organized by page (`t.transactions`, `t.drawer`, `t.plans`, `t.brands`, `t.sellers`, `t.overview`, `t.import`) plus shared keys at the root (`t.loading`, `t.retry`, `t.total`, `t.noPlan`, `t.year`).
+
+---
+
+## 13. Existing Components
 
 > **Note:** Placeholder. Fill in with the actual component files once confirmed. Without this, a new instance may create duplicate components or ignore existing ones.
 
@@ -439,7 +457,7 @@ frontend/src/
 
 ---
 
-## 12. Frontend Conventions
+## 14. Frontend Conventions
 
 - Use Tailwind utility classes exclusively for styling. No custom CSS unless unavoidable.
 - All blues from the Tailwind `blue` family. No mixed blue tones.
@@ -450,7 +468,7 @@ frontend/src/
 
 ---
 
-## 13. Relevant Constraints from CLAUDE.md
+## 15. Relevant Constraints from CLAUDE.md
 
 - Prioritize usability over visuals.
 - Tables are the primary UI element; charts support decisions but do not dominate.

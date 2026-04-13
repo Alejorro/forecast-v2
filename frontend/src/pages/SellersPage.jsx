@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext'
 import { getSellersSummary, getTransactions } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
+import t from '../utils/t'
 
 // ─── Column style constants ───────────────────────────────────────────────────
 
@@ -48,16 +49,16 @@ function SellerTransactions({ sellerId, year }) {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-slate-400 py-2">No transactions for this year.</p>
+        <p className="text-sm text-slate-400 py-2">{t.sellers.noTransactions}</p>
       ) : (
         <table className="w-full min-w-[540px]">
           <thead>
             <tr className="border-b border-slate-200">
-              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">Client</th>
-              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">Brand</th>
-              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">Stage</th>
-              <th className="pb-2 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">TCV</th>
-              <th className="pb-2 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">Weighted</th>
+              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">{t.sellers.subColumns.client}</th>
+              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">{t.sellers.subColumns.brand}</th>
+              <th className="pb-2 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">{t.sellers.subColumns.stage}</th>
+              <th className="pb-2 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">{t.transactions.columns.tcv}</th>
+              <th className="pb-2 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider pl-4">{t.transactions.columns.weighted}</th>
             </tr>
           </thead>
           <tbody>
@@ -193,8 +194,8 @@ export default function SellersPage() {
     <div>
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-xl font-semibold text-[#0F172A]">Sellers</h1>
-        <p className="text-sm text-[#64748B] mt-0.5">Seller contribution for {year}</p>
+        <h1 className="text-xl font-semibold text-[#0F172A]">{t.sellers.title}</h1>
+        <p className="text-sm text-[#64748B] mt-0.5">{t.sellers.subtitle(year)}</p>
       </div>
 
       {error && (
@@ -208,25 +209,25 @@ export default function SellersPage() {
         <table className="w-full min-w-[700px]">
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50">
-              <th className={TH_LEFT}>Seller</th>
-              <th className={TH_RIGHT}>Deals</th>
-              <th className={TH_RIGHT}>TCV Total</th>
-              <th className={TH_RIGHT}>Weighted Forecast</th>
-              <th className={TH_RIGHT}>Won</th>
-              <th className={TH_RIGHT}>Contribution</th>
+              <th className={TH_LEFT}>{t.sellers.columns.seller}</th>
+              <th className={TH_RIGHT}>{t.sellers.columns.deals}</th>
+              <th className={TH_RIGHT}>{t.sellers.columns.tcvTotal}</th>
+              <th className={TH_RIGHT}>{t.sellers.columns.weightedForecast}</th>
+              <th className={TH_RIGHT}>{t.sellers.columns.won}</th>
+              <th className={TH_RIGHT}>{t.sellers.columns.contribution}</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
                 <td colSpan={6} className="px-6 py-16 text-center text-sm text-slate-400">
-                  Loading sellers...
+                  {t.sellers.loadingSellers}
                 </td>
               </tr>
             ) : sellers.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-6 py-14 text-center text-sm text-slate-400">
-                  No sellers found.
+                  {t.sellers.noSellers}
                 </td>
               </tr>
             ) : (
@@ -254,7 +255,7 @@ export default function SellersPage() {
             <tfoot>
               <tr className="border-t-2 border-slate-400 bg-slate-100">
                 <td className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Total
+                  {t.sellers.total}
                 </td>
                 <td className="px-4 py-3 text-sm text-right tabular-nums font-semibold text-slate-500 border-l border-slate-200">
                   {totals.deals}
@@ -279,7 +280,7 @@ export default function SellersPage() {
 
       {!loading && sellers.length > 0 && (
         <p className="mt-3 text-xs text-slate-400">
-          Click a row to see that seller's transactions.
+          {t.sellers.clickHint}
         </p>
       )}
     </div>

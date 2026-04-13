@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   description              TEXT,
   invoice_number           TEXT,
   notes                    TEXT,
+  highlight_color          TEXT,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at               TIMESTAMPTZ

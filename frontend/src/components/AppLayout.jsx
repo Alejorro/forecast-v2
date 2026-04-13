@@ -1,14 +1,15 @@
 import React from 'react'
 import { useAppContext } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
+import t from '../utils/t'
 
 const NAV_ITEMS = [
-  { id: 'overview',      label: 'Overview' },
-  { id: 'transactions',  label: 'Transactions' },
-  { id: 'plans',         label: 'Plans' },
-  { id: 'brands',        label: 'Brands' },
-  { id: 'sellers',       label: 'Sellers' },
-  { id: 'import',        label: 'Import',   adminOnly: true },
+  { id: 'overview',      label: t.nav.overview },
+  { id: 'transactions',  label: t.nav.transactions },
+  { id: 'plans',         label: t.nav.plans },
+  { id: 'brands',        label: t.nav.brands },
+  { id: 'sellers',       label: t.nav.sellers },
+  { id: 'import',        label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
 function UserBadge({ user, onLogout }) {
@@ -46,6 +47,7 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
   const isGuest = user?.role === 'guest'
 
   const visibleNav = NAV_ITEMS.filter((item) => {
+    if (item.hidden) return false
     if (item.adminOnly && isGuest) return false
     return true
   })
@@ -85,7 +87,7 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
           {/* Right: year selector + user badge */}
           <div className="flex-shrink-0 flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <label className="text-xs text-[#64748B] font-medium">Year</label>
+              <label className="text-xs text-[#64748B] font-medium">{t.year}</label>
               <select
                 value={year}
                 onChange={(e) => setYear(Number(e.target.value))}

@@ -69,6 +69,15 @@ function buildListQuery(params) {
   return { where, bindings };
 }
 
+const VALID_HIGHLIGHT_COLORS = ['green', 'yellow', 'orange', 'red'];
+
+/** Returns the sanitized value (null if empty), or false if invalid. */
+function validateHighlightColor(value) {
+  if (!value) return null;
+  if (!VALID_HIGHLIGHT_COLORS.includes(value)) return false;
+  return value;
+}
+
 function resolveAllocations(body) {
   if (body.quarter) {
     const alloc = quarterToAllocations(body.quarter);
@@ -153,6 +162,9 @@ router.post('/', requireWrite, async (req, res) => {
   const dueDateErr = validateDueDate(body.due_date);
   if (dueDateErr) return res.status(400).json({ error: dueDateErr });
 
+  const highlightColor = validateHighlightColor(body.highlight_color);
+  if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
+
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
@@ -162,12 +174,12 @@ router.post('/', requireWrite, async (req, res) => {
         sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
         due_date, stage_label, status_label, tcv,
         allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-        description, invoice_number, notes
+        description, invoice_number, notes, highlight_color
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, 'LOSS', 'LOSS', $10,
         0, 0, 0, 0,
-        $11, $12, $13
+        $11, $12, $13, $14
       ) RETURNING id
     `, [
       body.client_name,
@@ -183,6 +195,7 @@ router.post('/', requireWrite, async (req, res) => {
       body.description              ?? null,
       body.invoice_number           ?? null,
       body.notes                    ?? null,
+      highlightColor,
     ]);
 
     const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
@@ -209,12 +222,12 @@ router.post('/', requireWrite, async (req, res) => {
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
       due_date, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes
+      description, invoice_number, notes, highlight_color
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18
+      $16, $17, $18, $19
     ) RETURNING id
   `, [
     body.client_name,
@@ -235,6 +248,7 @@ router.post('/', requireWrite, async (req, res) => {
     body.description              ?? null,
     body.invoice_number           ?? null,
     body.notes                    ?? null,
+    highlightColor,
   ]);
 
   const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
@@ -262,6 +276,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
   const dueDateErr = validateDueDate(body.due_date);
   if (dueDateErr) return res.status(400).json({ error: dueDateErr });
 
+  const highlightColor = validateHighlightColor(body.highlight_color);
+  if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
+
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
@@ -286,8 +303,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
         description              = $11,
         invoice_number           = $12,
         notes                    = $13,
+        highlight_color          = $14,
         updated_at               = NOW()
-      WHERE id = $14
+      WHERE id = $15
     `, [
       body.client_name,
       body.project_name             ?? null,
@@ -302,6 +320,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       body.description              ?? null,
       body.invoice_number           ?? null,
       body.notes                    ?? null,
+      highlightColor,
       id,
     ]);
 
@@ -343,8 +362,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
       description              = $16,
       invoice_number           = $17,
       notes                    = $18,
+      highlight_color          = $19,
       updated_at               = NOW()
-    WHERE id = $19
+    WHERE id = $20
   `, [
     body.client_name,
     body.project_name             ?? null,
@@ -364,6 +384,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     body.description              ?? null,
     body.invoice_number           ?? null,
     body.notes                    ?? null,
+    highlightColor,
     id,
   ]);
 
@@ -404,12 +425,12 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
       due_date, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes
+      description, invoice_number, notes, highlight_color
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18
+      $16, $17, $18, $19
     ) RETURNING id
   `, [
     original.client_name,
@@ -430,6 +451,7 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     original.description,
     original.invoice_number,
     original.notes,
+    original.highlight_color ?? null,
   ]);
 
   const { rows: cloned } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);

@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext'
 import { getOverview } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
+import t from '../utils/t'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ function QuarterlyLegend({ payload }) {
 
 function QuarterlyChart({ data }) {
   if (!data || data.length === 0) return (
-    <p className="text-sm text-slate-400 text-center py-8">No data available.</p>
+    <p className="text-sm text-slate-400 text-center py-8">{t.overview.noData}</p>
   )
   const chartData = data.map(d => ({
     name: `Q${d.quarter}`,
@@ -139,7 +140,7 @@ function QuarterlyChart({ data }) {
 
 function GapByBrandChart({ data }) {
   if (!data || data.length === 0) return (
-    <p className="text-sm text-slate-400 text-center py-8">No data available.</p>
+    <p className="text-sm text-slate-400 text-center py-8">{t.overview.noData}</p>
   )
 
   // Sort: most behind (highest positive gap) first, no-plan rows last
@@ -168,7 +169,7 @@ function GapByBrandChart({ data }) {
                 {d.brand_name}
               </span>
               {noPlan ? (
-                <span className="text-xs text-slate-400 italic flex-1">No plan</span>
+                <span className="text-xs text-slate-400 italic flex-1">{t.noPlan}</span>
               ) : (
                 <>
                   <div className="flex-1 h-3 bg-slate-200 rounded-full overflow-hidden">
@@ -190,7 +191,7 @@ function GapByBrandChart({ data }) {
             </div>
             {!noPlan && forecast != null && (
               <p className="text-xs text-slate-500 tabular-nums pl-[6.75rem]">
-                {formatUSD(forecast)} forecast · {formatUSD(d.plan)} plan
+                {formatUSD(forecast)} {t.overview.forecastLabel} · {formatUSD(d.plan)} {t.overview.planLabel}
               </p>
             )}
           </div>
@@ -233,7 +234,7 @@ function CustomTooltip({ active, payload }) {
 
 function PipelineDonut({ data }) {
   if (!data || data.length === 0) return (
-    <p className="text-sm text-slate-400 text-center py-8">No pipeline data.</p>
+    <p className="text-sm text-slate-400 text-center py-8">{t.overview.noPipelineData}</p>
   )
   const chartData = data.map(d => ({
     name:  d.stage_label,
@@ -292,7 +293,7 @@ function PipelineDonut({ data }) {
           })}
         </div>
         <div className="mt-3 pt-2.5 border-t border-slate-100 flex justify-between items-baseline">
-          <span className="text-[13px] text-slate-500">Total</span>
+          <span className="text-[13px] text-slate-500">{t.total}</span>
           <span className="text-sm font-semibold text-slate-800 tabular-nums">{formatUSD(total)}</span>
         </div>
       </div>
@@ -306,7 +307,7 @@ function TopOpportunitiesTable({ rows, onEdit }) {
   const [hovered, setHovered] = useState(null)
 
   if (!rows || rows.length === 0) return (
-    <p className="text-sm text-slate-400 text-center py-6">No active opportunities.</p>
+    <p className="text-sm text-slate-400 text-center py-6">{t.overview.noOpportunities}</p>
   )
 
   return (
@@ -314,11 +315,11 @@ function TopOpportunitiesTable({ rows, onEdit }) {
       <table className="w-full min-w-[560px]">
         <thead>
           <tr className="border-b border-slate-200">
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Client</th>
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Brand</th>
-            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Stage</th>
-            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">TCV</th>
-            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Weighted</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.brands.columns.client}</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.brand}</th>
+            <th className="pb-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.stage}</th>
+            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.tcv}</th>
+            <th className="pb-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.transactions.columns.weighted}</th>
           </tr>
         </thead>
         <tbody>
@@ -377,8 +378,8 @@ export default function OverviewPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold text-[#0F172A]">Overview</h1>
-        <p className="text-sm text-[#64748B] mt-0.5">Forecast summary for {year}</p>
+        <h1 className="text-xl font-semibold text-[#0F172A]">{t.overview.title}</h1>
+        <p className="text-sm text-[#64748B] mt-0.5">{t.overview.subtitle(year)}</p>
       </div>
 
       {error && (
@@ -389,15 +390,15 @@ export default function OverviewPage() {
 
       {/* KPI row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="Total Plan"           value={data?.total_plan}               loading={loading} color="default" />
-        <KPICard label="FY Forecast"           value={data?.total_weighted_forecast}  loading={loading} color="default" />
-        <KPICard label="Total Won"            value={data?.total_won}                loading={loading} color="success" />
-        <KPICard label="Gap (Plan − Forecast)" value={gap}                           loading={loading} color={gapColor} />
+        <KPICard label={t.overview.kpi.totalPlan}  value={data?.total_plan}              loading={loading} color="default" />
+        <KPICard label={t.overview.kpi.fyForecast} value={data?.total_weighted_forecast} loading={loading} color="default" />
+        <KPICard label={t.overview.kpi.totalWon}   value={data?.total_won}               loading={loading} color="success" />
+        <KPICard label={t.overview.kpi.gap}        value={gap}                           loading={loading} color={gapColor} />
       </div>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Section title="Plan vs Forecast vs Won by Quarter">
+        <Section title={t.overview.sections.quarterlyChart}>
           {loading ? (
             <div className="h-48 bg-slate-50 rounded animate-pulse" />
           ) : (
@@ -405,7 +406,7 @@ export default function OverviewPage() {
           )}
         </Section>
 
-        <Section title="Pipeline by Stage">
+        <Section title={t.overview.sections.pipelineByStage}>
           {loading ? (
             <div className="h-48 bg-slate-50 rounded animate-pulse" />
           ) : (
@@ -415,7 +416,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Gap by brand — full width */}
-      <Section title="Gap by Brand" subtitle={`FY ${year}`}>
+      <Section title={t.overview.sections.gapByBrand} subtitle={`FY ${year}`}>
         {loading ? (
           <div className="space-y-3">
             {[1,2,3].map(i => <div key={i} className="h-5 bg-slate-50 rounded animate-pulse" />)}
@@ -426,7 +427,7 @@ export default function OverviewPage() {
       </Section>
 
       {/* Top Opportunities */}
-      <Section title="Top 5 Active Opportunities">
+      <Section title={t.overview.sections.topOpportunities}>
         {loading ? (
           <div className="space-y-3">
             {[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-slate-50 rounded animate-pulse" />)}

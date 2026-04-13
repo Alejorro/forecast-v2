@@ -3,6 +3,7 @@ import { useAppContext } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import { getPlans, updatePlan } from '../utils/api'
 import { formatUSD, formatNumber } from '../utils/format'
+import t from '../utils/t'
 
 // Column header variants
 const TH_BASE = 'px-3 py-2.5 text-xs font-semibold uppercase tracking-wider'
@@ -127,7 +128,7 @@ export default function PlansPage() {
     <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-xl font-semibold text-slate-900">Plans</h1>
+        <h1 className="text-xl font-semibold text-slate-900">{t.plans.title}</h1>
         {isAdmin && (
           <div className="flex items-center gap-3">
             {saveError && (
@@ -135,7 +136,7 @@ export default function PlansPage() {
             )}
             {hasChanges && !saving && (
               <span className="text-sm text-slate-400">
-                {dirtyBrandCount} brand{dirtyBrandCount !== 1 ? 's' : ''} modified
+                {t.plans.brandsModified(dirtyBrandCount)}
               </span>
             )}
             <button
@@ -150,7 +151,7 @@ export default function PlansPage() {
                     : 'text-blue-300 bg-blue-50 cursor-not-allowed',
               ].join(' ')}
             >
-              {saving ? 'Saving...' : 'Save all changes'}
+              {saving ? t.plans.saving : t.plans.saveAll}
             </button>
           </div>
         )}
@@ -162,7 +163,7 @@ export default function PlansPage() {
           <div className="px-6 py-12 text-center">
             <p className="text-sm text-red-500">{error}</p>
             <button onClick={fetchPlans} className="mt-3 text-sm text-blue-600 hover:underline">
-              Retry
+              {t.plans.retry}
             </button>
           </div>
         ) : (
@@ -194,13 +195,13 @@ export default function PlansPage() {
                 {loading ? (
                   <tr>
                     <td colSpan={8} className="px-6 py-20 text-center text-sm text-slate-400">
-                      Loading plans...
+                      {t.plans.loadingPlans}
                     </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="px-6 py-14 text-center text-sm text-slate-400">
-                      No brands found
+                      {t.plans.noBrands}
                     </td>
                   </tr>
                 ) : (
@@ -295,7 +296,7 @@ export default function PlansPage() {
       {/* Editing hint */}
       {isAdmin && !loading && rows.length > 0 && (
         <p className="mt-3 text-xs text-slate-500">
-          Click any Q1–Q4 cell to edit. Unsaved changes are highlighted in amber.
+          {t.plans.editHint}
         </p>
       )}
     </div>
