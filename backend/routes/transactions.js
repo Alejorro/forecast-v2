@@ -18,7 +18,7 @@ function buildListQuery(params) {
   const conditions = ['t.deleted_at IS NULL'];
   const bindings = [];
 
-  const { year, brand_id, seller_id, stage_label, quarter, include_loss, search } = params;
+  const { year, brand_id, seller_id, stage_label, quarter, include_loss, search, transaction_type } = params;
 
   if (year) {
     if (include_loss === 'true') {
@@ -57,6 +57,11 @@ function buildListQuery(params) {
     conditions.push("t.stage_label = 'LOSS'");
   } else {
     conditions.push("t.stage_label != 'LOSS'");
+  }
+
+  if (transaction_type) {
+    conditions.push(`t.transaction_type = $${bindings.length + 1}`);
+    bindings.push(transaction_type);
   }
 
   if (search) {

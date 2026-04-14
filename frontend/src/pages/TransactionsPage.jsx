@@ -109,6 +109,7 @@ export default function TransactionsPage() {
   const [sellerFilter, setSellerFilter] = useState('')
   const [stageFilter, setStageFilter] = useState('')
   const [quarterFilter, setQuarterFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
   const [transactions, setTransactions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -118,7 +119,7 @@ export default function TransactionsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
 
-  const hasFilters = search || brandFilter || sellerFilter || stageFilter || quarterFilter
+  const hasFilters = search || brandFilter || sellerFilter || stageFilter || quarterFilter || typeFilter
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
@@ -132,6 +133,7 @@ export default function TransactionsPage() {
         if (sellerFilter) params.seller_id = sellerFilter
         if (stageFilter) params.stage_label = stageFilter
         if (quarterFilter) params.quarter = quarterFilter
+        if (typeFilter) params.transaction_type = typeFilter
         if (search) params.search = search
       }
       const data = await getTransactions(params)
@@ -141,7 +143,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [year, brandFilter, sellerFilter, stageFilter, quarterFilter, search])
+  }, [year, brandFilter, sellerFilter, stageFilter, quarterFilter, typeFilter, search])
 
   useEffect(() => {
     const timer = setTimeout(fetchTransactions, search ? 300 : 0)
@@ -154,6 +156,7 @@ export default function TransactionsPage() {
     setSellerFilter('')
     setStageFilter('')
     setQuarterFilter('')
+    setTypeFilter('')
   }
 
   function openNewDrawer() { setEditingTransaction(null); setDrawerOpen(true) }
@@ -173,9 +176,10 @@ export default function TransactionsPage() {
   }
 
   const SORT_VALUE = {
-    client:   (tx) => (tx.client_name || '').toLowerCase(),
-    brand:    (tx) => (tx.brand_name  || '').toLowerCase(),
-    seller:   (tx) => (tx.seller_name || '').toLowerCase(),
+    client:   (tx) => (tx.client_name       || '').toLowerCase(),
+    brand:    (tx) => (tx.brand_name        || '').toLowerCase(),
+    seller:   (tx) => (tx.seller_name       || '').toLowerCase(),
+    type:     (tx) => (tx.transaction_type  || '').toLowerCase(),
     tcv:      (tx) => tx.tcv          ?? 0,
     stage:    (tx) => stagePercent(tx),
     weighted: (tx) => tx.weighted_total ?? 0,
@@ -262,6 +266,12 @@ export default function TransactionsPage() {
             {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
           </FilterSelect>
 
+          <FilterSelect value={typeFilter} onChange={setTypeFilter} placeholder="Todos los types">
+            <option value="BAU">BAU</option>
+            <option value="EXPAND">EXPAND</option>
+            <option value="NEW CLIENT">NEW CLIENT</option>
+          </FilterSelect>
+
           {/* Clear filters */}
           {hasFilters && (
             <button
@@ -325,7 +335,7 @@ export default function TransactionsPage() {
                   <SortableTH col="client"   label={t.transactions.columns.client}   sortState={sort} onSort={handleSort} className={TH} />
                   <SortableTH col="brand"    label={t.transactions.columns.brand}    sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="seller"   label={t.transactions.columns.seller}   sortState={sort} onSort={handleSort} className={TH_SEP} />
-                  <th className={TH_SEP}>{t.transactions.columns.type}</th>
+                  <SortableTH col="type" label={t.transactions.columns.type} sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="tcv"      label={t.transactions.columns.tcv}      sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="stage"    label={t.transactions.columns.stage}    sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="weighted" label={t.transactions.columns.weighted} sortState={sort} onSort={handleSort} className={TH_SEP} />
