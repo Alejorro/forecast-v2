@@ -40,7 +40,11 @@ const HIGHLIGHT_COLORS = [
   { value: 'red',    dot: 'bg-red-400',    ring: 'ring-red-500'    },
 ]
 
-const TRANSACTION_TYPE_OPTIONS = ['BAU', 'EXPAND', 'NEW CLIENT']
+const TRANSACTION_TYPE_OPTIONS = [
+  { value: 'BAU',        label: 'Business As Usual' },
+  { value: 'EXPAND',     label: 'Expand the Base'   },
+  { value: 'NEW CLIENT', label: 'New Client'         },
+]
 
 const EMPTY_FORM = {
   client_name: '',
@@ -497,7 +501,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             >
               <option value="">Seleccioná un tipo...</option>
               {TRANSACTION_TYPE_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
           </Field>

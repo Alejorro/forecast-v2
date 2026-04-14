@@ -407,7 +407,7 @@ export default function TransactionsPage() {
                           <span className="block truncate" title={tx.seller_name}>{tx.seller_name || ''}</span>
                         </td>
                         <td className={`px-3 py-2 text-xs text-center border-l border-slate-200 ${loss ? 'text-slate-300' : 'text-slate-500'}`}>
-                          <span className="block truncate">{tx.transaction_type || ''}</span>
+                          <span className="block truncate">{tx.transaction_type === 'NEW CLIENT' ? 'NEW' : tx.transaction_type || ''}</span>
                         </td>
                         <td className={`px-3 py-2 text-sm text-right font-medium tabular-nums border-l border-slate-200 ${loss ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
                           {formatUSD(tx.tcv)}
