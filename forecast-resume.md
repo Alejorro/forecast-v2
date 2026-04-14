@@ -233,6 +233,7 @@ Null handling:
 | invoice_number | Optional |
 | notes | Optional |
 | highlight_color | Optional; one of: `green`, `yellow`, `orange`, `red`; null = no highlight |
+| transaction_type | Optional (TEXT); one of: `BAU`, `EXPAND`, `NEW CLIENT`; null for existing rows |
 | created_at | Timestamp |
 | updated_at | Timestamp |
 | deleted_at | Nullable; soft delete marker |
@@ -495,6 +496,21 @@ Allocation sum must equal 1.0 (±0.001 tolerance). Rows where all quarter values
 - The import year is hardcoded to 2026 in the import script.
 - The five canonical brands are the only valid brands. All others are rejected during import.
 
+### Year rollover (e.g. 2026 → 2027)
+
+No schema changes or new tables are required. The system already supports multiple years natively.
+
+To start a new year:
+1. Go to **Plans** and enter the targets for the new year per brand.
+2. Switch the global year selector to the new year.
+3. New transactions with `due_date` in the new year appear automatically in the new year scope.
+
+Prior year data remains intact and accessible by switching the year selector back.
+
+The only manual step required in code: update the `YEAR` constant in `backend/scripts/import-datadot.js` if the Excel import script is used for the new year.
+
+With Odoo integration active, year scoping is automatic — transactions use `due_date` derived from `crm.lead.date_deadline`, so 2027 opportunities appear in 2027 scope without any intervention.
+
 ---
 
 ## 12. Known Limitations & Open Issues
@@ -538,6 +554,7 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] SQLite → PostgreSQL migration script (`backend/scripts/migrate-sqlite-to-pg.js`)
 - [x] `highlight_color` field on transactions (`TEXT`, nullable, values: `green/yellow/orange/red`)
 - [x] Migration script for `highlight_color` column (`backend/scripts/migrate-add-highlight-color.js`)
+- [x] `transaction_type` field on transactions (`TEXT`, nullable, values: `BAU/EXPAND/NEW CLIENT`); added via `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in `schema.sql`
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`

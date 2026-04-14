@@ -236,6 +236,7 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 | Client | Text |
 | Brand | Text |
 | Seller | Text |
+| Type | `transaction_type` value (BAU / EXPAND / NEW CLIENT); blank if null |
 | TCV | USD, right-aligned |
 | Stage | Color-coded badge |
 | Weighted Value | `TCV × stage%`, right-aligned |
@@ -254,6 +255,7 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 | Highlight color | 4 colored dots (green/yellow/orange/red) shown directly below the Client field. Click to select; click again to deselect. Sets `highlight_color` on the transaction. |
 | Brand | Required (dropdown from brand list) |
 | Seller | Required (dropdown from seller list) |
+| Type | Required for new transactions; optional when editing; dropdown: BAU / EXPAND / NEW CLIENT |
 | TCV | USD, required |
 | Stage | Required; dropdown with 5 options |
 | Status | Optional; only valid value is LOSS |

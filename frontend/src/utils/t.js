@@ -73,6 +73,7 @@ const t = {
       tcv:      'TCV',
       stage:    'Estado',
       weighted: 'Weighted',
+      type:     'Type',
     },
   },
 
@@ -97,6 +98,7 @@ const t = {
       odooOpportunity:        'Odoo Opportunity',
       brandOpp:               'Brand Opp #',
       invoiceNumber:          'Número de factura',
+      transactionType:        'Type',
     },
     placeholders: {
       clientName:    'Ej: Acme Corp',

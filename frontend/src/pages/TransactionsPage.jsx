@@ -306,24 +306,26 @@ export default function TransactionsPage() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full table-fixed min-w-[900px]">
+            <table className="w-full table-fixed min-w-[1000px]">
               <colgroup>
-                <col style={{ width: '19%' }} />  {/* Client */}
-                <col style={{ width: '11%' }} />  {/* Brand */}
-                <col style={{ width: '11%' }} />  {/* Seller */}
-                <col style={{ width: '11%' }} />  {/* TCV */}
-                <col style={{ width: '13%' }} />  {/* Stage */}
-                <col style={{ width: '11%' }} />  {/* Weighted */}
-                <col style={{ width: '6%' }} />   {/* Q1 */}
-                <col style={{ width: '6%' }} />   {/* Q2 */}
-                <col style={{ width: '6%' }} />   {/* Q3 */}
-                <col style={{ width: '6%' }} />   {/* Q4 */}
+                <col style={{ width: '17%' }} />  {/* Client */}
+                <col style={{ width: '10%' }} />  {/* Brand */}
+                <col style={{ width: '10%' }} />  {/* Seller */}
+                <col style={{ width: '9%'  }} />  {/* Type */}
+                <col style={{ width: '10%' }} />  {/* TCV */}
+                <col style={{ width: '12%' }} />  {/* Stage */}
+                <col style={{ width: '10%' }} />  {/* Weighted */}
+                <col style={{ width: '5%'  }} />  {/* Q1 */}
+                <col style={{ width: '5%'  }} />  {/* Q2 */}
+                <col style={{ width: '6%'  }} />  {/* Q3 */}
+                <col style={{ width: '6%'  }} />  {/* Q4 */}
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <SortableTH col="client"   label={t.transactions.columns.client}   sortState={sort} onSort={handleSort} className={TH} />
                   <SortableTH col="brand"    label={t.transactions.columns.brand}    sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="seller"   label={t.transactions.columns.seller}   sortState={sort} onSort={handleSort} className={TH_SEP} />
+                  <th className={TH_SEP}>{t.transactions.columns.type}</th>
                   <SortableTH col="tcv"      label={t.transactions.columns.tcv}      sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="stage"    label={t.transactions.columns.stage}    sortState={sort} onSort={handleSort} className={TH_SEP} />
                   <SortableTH col="weighted" label={t.transactions.columns.weighted} sortState={sort} onSort={handleSort} className={TH_SEP} />
@@ -336,13 +338,13 @@ export default function TransactionsPage() {
               <tbody>
                 {loading && transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-6 py-20 text-center text-sm text-slate-400">
+                    <td colSpan={11} className="px-6 py-20 text-center text-sm text-slate-400">
                       {t.transactions.loadingList}
                     </td>
                   </tr>
                 ) : transactions.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-6 py-14 text-center">
+                    <td colSpan={11} className="px-6 py-14 text-center">
                       <div className="flex flex-col items-center gap-3">
                         {hasFilters ? <IconSearch /> : <IconInbox />}
                         <div>
@@ -403,6 +405,9 @@ export default function TransactionsPage() {
                         </td>
                         <td className={`px-3 py-2 text-sm border-l border-slate-200 ${loss ? 'text-slate-300' : 'text-slate-500'}`}>
                           <span className="block truncate" title={tx.seller_name}>{tx.seller_name || ''}</span>
+                        </td>
+                        <td className={`px-3 py-2 text-xs text-center border-l border-slate-200 ${loss ? 'text-slate-300' : 'text-slate-500'}`}>
+                          <span className="block truncate">{tx.transaction_type || ''}</span>
                         </td>
                         <td className={`px-3 py-2 text-sm text-right font-medium tabular-nums border-l border-slate-200 ${loss ? 'text-slate-400 line-through' : 'text-slate-600'}`}>
                           {formatUSD(tx.tcv)}

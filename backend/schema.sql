@@ -44,7 +44,14 @@ CREATE TABLE IF NOT EXISTS transactions (
   invoice_number           TEXT,
   notes                    TEXT,
   highlight_color          TEXT,
+  transaction_type         TEXT,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at               TIMESTAMPTZ
 );
+
+-- Idempotent migration: add transaction_type if it doesn't exist yet
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_type TEXT;
+
+-- Default existing rows to BAU
+UPDATE transactions SET transaction_type = 'BAU' WHERE transaction_type IS NULL;

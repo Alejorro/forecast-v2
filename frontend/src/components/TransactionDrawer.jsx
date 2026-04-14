@@ -40,6 +40,8 @@ const HIGHLIGHT_COLORS = [
   { value: 'red',    dot: 'bg-red-400',    ring: 'ring-red-500'    },
 ]
 
+const TRANSACTION_TYPE_OPTIONS = ['BAU', 'EXPAND', 'NEW CLIENT']
+
 const EMPTY_FORM = {
   client_name: '',
   brand_id: '',
@@ -56,6 +58,7 @@ const EMPTY_FORM = {
   invoice_number: '',
   notes: '',
   highlight_color: '',
+  transaction_type: '',
 }
 
 function buildFormFromTransaction(tx) {
@@ -78,6 +81,7 @@ function buildFormFromTransaction(tx) {
     invoice_number:           tx.invoice_number || '',
     notes:                    tx.notes || '',
     highlight_color:          tx.highlight_color || '',
+    transaction_type:         tx.transaction_type || '',
   }
 }
 
@@ -264,6 +268,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     if (!form.client_name.trim()) errs.client_name = t.drawer.validation.required
     if (!form.brand_id) errs.brand_id = t.drawer.validation.required
     if (!form.seller_id) errs.seller_id = t.drawer.validation.required
+    if (!isEdit && !form.transaction_type) errs.transaction_type = t.drawer.validation.required
     if (!isLossStage) {
       if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0)
         errs.tcv = t.drawer.validation.invalidAmount
@@ -287,6 +292,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     if (!form.brand_id) return false
     if (!form.seller_id) return false
     if (!form.stage_label) return false
+    if (!isEdit && !form.transaction_type) return false
     if (!isLossStage) {
       if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0) return false
       if (!form.quarter) return false
@@ -326,6 +332,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
         invoice_number:           form.invoice_number || null,
         notes:                    form.notes || null,
         highlight_color:          form.highlight_color || null,
+        transaction_type:         form.transaction_type || null,
       }
 
       if (!isLossStage) {
@@ -480,6 +487,20 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
               )}
             </Field>
           </div>
+
+          {/* Type */}
+          <Field label={t.drawer.fields.transactionType} required={!isEdit} error={errors.transaction_type}>
+            <select
+              className={inputClass}
+              value={form.transaction_type}
+              onChange={(e) => set('transaction_type', e.target.value)}
+            >
+              <option value="">Seleccioná un tipo...</option>
+              {TRANSACTION_TYPE_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </Field>
 
           {/* Sub Brand */}
           <Field label={t.drawer.fields.subBrand} error={errors.sub_brand}>

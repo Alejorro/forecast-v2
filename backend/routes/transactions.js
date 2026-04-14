@@ -70,11 +70,19 @@ function buildListQuery(params) {
 }
 
 const VALID_HIGHLIGHT_COLORS = ['green', 'yellow', 'orange', 'red'];
+const VALID_TRANSACTION_TYPES = ['BAU', 'EXPAND', 'NEW CLIENT'];
 
 /** Returns the sanitized value (null if empty), or false if invalid. */
 function validateHighlightColor(value) {
   if (!value) return null;
   if (!VALID_HIGHLIGHT_COLORS.includes(value)) return false;
+  return value;
+}
+
+/** Returns the sanitized value (null if empty), or false if invalid. */
+function validateTransactionType(value) {
+  if (!value) return null;
+  if (!VALID_TRANSACTION_TYPES.includes(value)) return false;
   return value;
 }
 
@@ -165,6 +173,9 @@ router.post('/', requireWrite, async (req, res) => {
   const highlightColor = validateHighlightColor(body.highlight_color);
   if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
 
+  const transactionType = validateTransactionType(body.transaction_type);
+  if (transactionType === false) return res.status(400).json({ error: 'Invalid transaction_type' });
+
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
@@ -174,12 +185,12 @@ router.post('/', requireWrite, async (req, res) => {
         sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
         due_date, stage_label, status_label, tcv,
         allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-        description, invoice_number, notes, highlight_color
+        description, invoice_number, notes, highlight_color, transaction_type
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, 'LOSS', 'LOSS', $10,
         0, 0, 0, 0,
-        $11, $12, $13, $14
+        $11, $12, $13, $14, $15
       ) RETURNING id
     `, [
       body.client_name,
@@ -196,6 +207,7 @@ router.post('/', requireWrite, async (req, res) => {
       body.invoice_number           ?? null,
       body.notes                    ?? null,
       highlightColor,
+      transactionType,
     ]);
 
     const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
@@ -222,12 +234,12 @@ router.post('/', requireWrite, async (req, res) => {
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
       due_date, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes, highlight_color
+      description, invoice_number, notes, highlight_color, transaction_type
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19
+      $16, $17, $18, $19, $20
     ) RETURNING id
   `, [
     body.client_name,
@@ -249,6 +261,7 @@ router.post('/', requireWrite, async (req, res) => {
     body.invoice_number           ?? null,
     body.notes                    ?? null,
     highlightColor,
+    transactionType,
   ]);
 
   const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
@@ -279,6 +292,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
   const highlightColor = validateHighlightColor(body.highlight_color);
   if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
 
+  const transactionType = validateTransactionType(body.transaction_type);
+  if (transactionType === false) return res.status(400).json({ error: 'Invalid transaction_type' });
+
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
@@ -304,8 +320,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
         invoice_number           = $12,
         notes                    = $13,
         highlight_color          = $14,
+        transaction_type         = $15,
         updated_at               = NOW()
-      WHERE id = $15
+      WHERE id = $16
     `, [
       body.client_name,
       body.project_name             ?? null,
@@ -321,6 +338,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
       body.invoice_number           ?? null,
       body.notes                    ?? null,
       highlightColor,
+      transactionType,
       id,
     ]);
 
@@ -363,8 +381,9 @@ router.put('/:id', requireAdmin, async (req, res) => {
       invoice_number           = $17,
       notes                    = $18,
       highlight_color          = $19,
+      transaction_type         = $20,
       updated_at               = NOW()
-    WHERE id = $20
+    WHERE id = $21
   `, [
     body.client_name,
     body.project_name             ?? null,
@@ -385,6 +404,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     body.invoice_number           ?? null,
     body.notes                    ?? null,
     highlightColor,
+    transactionType,
     id,
   ]);
 
@@ -425,12 +445,12 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
       due_date, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes, highlight_color
+      description, invoice_number, notes, highlight_color, transaction_type
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19
+      $16, $17, $18, $19, $20
     ) RETURNING id
   `, [
     original.client_name,
@@ -451,7 +471,8 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     original.description,
     original.invoice_number,
     original.notes,
-    original.highlight_color ?? null,
+    original.highlight_color     ?? null,
+    original.transaction_type    ?? null,
   ]);
 
   const { rows: cloned } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
