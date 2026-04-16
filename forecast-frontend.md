@@ -220,8 +220,8 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 
 **Filter Bar**
 - Search field: filters by client name
-- Dropdowns: Brand, Seller, Stage, Quarter
-- LOSS toggle: shows/hides LOSS transactions
+- Dropdowns: Brand, Seller, Quarter (single-select); Type (single-select)
+- Stage: custom multi-select dropdown with checkboxes. Allows selecting multiple stage values simultaneously. Label: "Todos los estados" (none), stage name (1 selected), "X seleccionados" (2+). Filtering is client-side using `includes`. If LOSS is among selected stages, `include_loss=true` is sent to the backend.
 - "Clear filters" button
 - Quarter filter rule: shows transactions where `allocation > 0` for the selected quarter
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppContext } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import { getTransactions } from '../utils/api'
@@ -45,6 +45,80 @@ function FilterSelect({ value, onChange, children, placeholder }) {
       <option value="">{placeholder}</option>
       {children}
     </select>
+  )
+}
+
+function StageMultiSelect({ selectedStages, onChange }) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef(null)
+
+  // Close when clicking outside
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  function toggle(value) {
+    if (selectedStages.includes(value)) {
+      onChange(selectedStages.filter((v) => v !== value))
+    } else {
+      onChange([...selectedStages, value])
+    }
+  }
+
+  let label
+  if (selectedStages.length === 0) {
+    label = t.transactions.allStages
+  } else if (selectedStages.length === 1) {
+    const opt = STAGE_OPTIONS.find((o) => o.value === selectedStages[0])
+    label = opt?.label ?? selectedStages[0]
+  } else {
+    label = `${selectedStages.length} seleccionados`
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`border border-slate-300 rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center gap-2 whitespace-nowrap ${
+          selectedStages.length > 0 ? 'text-slate-900' : 'text-slate-400'
+        }`}
+      >
+        <span>{label}</span>
+        <svg
+          className={`w-3.5 h-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-20 mt-1 bg-white border border-slate-200 rounded-md shadow-md min-w-[180px]">
+          {STAGE_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex items-center gap-2.5 px-3 py-2 hover:bg-slate-50 cursor-pointer text-sm text-slate-700 first:rounded-t-md last:rounded-b-md"
+            >
+              <input
+                type="checkbox"
+                checked={selectedStages.includes(opt.value)}
+                onChange={() => toggle(opt.value)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              {opt.label}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -107,7 +181,7 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('')
   const [sellerFilter, setSellerFilter] = useState('')
-  const [stageFilter, setStageFilter] = useState('')
+  const [selectedStages, setSelectedStages] = useState([])
   const [quarterFilter, setQuarterFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [transactions, setTransactions] = useState([])
@@ -119,23 +193,23 @@ export default function TransactionsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingTransaction, setEditingTransaction] = useState(null)
 
-  const hasFilters = search || brandFilter || sellerFilter || stageFilter || quarterFilter || typeFilter
+  const hasFilters = search || brandFilter || sellerFilter || selectedStages.length > 0 || quarterFilter || typeFilter
 
   const fetchTransactions = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
       const params = { year }
-      if (stageFilter === 'LOSS') {
+      // If LOSS is among selected stages, include loss transactions from the backend.
+      // Stage filtering is done client-side to support multi-selection.
+      if (selectedStages.includes('LOSS')) {
         params.include_loss = 'true'
-      } else {
-        if (brandFilter) params.brand_id = brandFilter
-        if (sellerFilter) params.seller_id = sellerFilter
-        if (stageFilter) params.stage_label = stageFilter
-        if (quarterFilter) params.quarter = quarterFilter
-        if (typeFilter) params.transaction_type = typeFilter
-        if (search) params.search = search
       }
+      if (brandFilter) params.brand_id = brandFilter
+      if (sellerFilter) params.seller_id = sellerFilter
+      if (quarterFilter) params.quarter = quarterFilter
+      if (typeFilter) params.transaction_type = typeFilter
+      if (search) params.search = search
       const data = await getTransactions(params)
       setTransactions(Array.isArray(data) ? data : data?.transactions || [])
     } catch (err) {
@@ -143,7 +217,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [year, brandFilter, sellerFilter, stageFilter, quarterFilter, typeFilter, search])
+  }, [year, brandFilter, sellerFilter, selectedStages, quarterFilter, typeFilter, search])
 
   useEffect(() => {
     const timer = setTimeout(fetchTransactions, search ? 300 : 0)
@@ -154,7 +228,7 @@ export default function TransactionsPage() {
     setSearch('')
     setBrandFilter('')
     setSellerFilter('')
-    setStageFilter('')
+    setSelectedStages([])
     setQuarterFilter('')
     setTypeFilter('')
   }
@@ -194,15 +268,23 @@ export default function TransactionsPage() {
   const wonGroupingActive = sort.col !== 'stage'
 
   const displayedTransactions = (() => {
+    // Client-side stage filter
+    const stageFiltered = selectedStages.length === 0
+      ? transactions
+      : transactions.filter((tx) => {
+          if (isLoss(tx)) return selectedStages.includes('LOSS')
+          return selectedStages.includes(tx.stage_label)
+        })
+
     if (!sort.col) {
       // Default view: non-WON first, WON last, original server order preserved within each group
-      return [...transactions].sort((a, b) => (isWon(a) ? 1 : 0) - (isWon(b) ? 1 : 0))
+      return [...stageFiltered].sort((a, b) => (isWon(a) ? 1 : 0) - (isWon(b) ? 1 : 0))
     }
 
     const getValue = SORT_VALUE[sort.col]
     const mul = sort.dir === 'asc' ? 1 : -1
 
-    return [...transactions].sort((a, b) => {
+    return [...stageFiltered].sort((a, b) => {
       // Stage column: pure sort, no grouping
       if (!wonGroupingActive) {
         const av = getValue(a)
@@ -258,9 +340,7 @@ export default function TransactionsPage() {
             {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </FilterSelect>
 
-          <FilterSelect value={stageFilter} onChange={setStageFilter} placeholder={t.transactions.allStages}>
-            {STAGE_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </FilterSelect>
+          <StageMultiSelect selectedStages={selectedStages} onChange={setSelectedStages} />
 
           <FilterSelect value={quarterFilter} onChange={setQuarterFilter} placeholder={t.transactions.allQuarters}>
             {QUARTER_OPTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
@@ -290,7 +370,7 @@ export default function TransactionsPage() {
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-5">
         <p className="text-sm text-slate-500">
-          {loading ? t.loading : t.transactions.count(transactions.length)}
+          {loading ? t.loading : t.transactions.count(displayedTransactions.length)}
         </p>
         {canWrite && (
           <button
@@ -352,7 +432,7 @@ export default function TransactionsPage() {
                       {t.transactions.loadingList}
                     </td>
                   </tr>
-                ) : transactions.length === 0 ? (
+                ) : displayedTransactions.length === 0 ? (
                   <tr>
                     <td colSpan={11} className="px-6 py-14 text-center">
                       <div className="flex flex-col items-center gap-3">
