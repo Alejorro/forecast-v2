@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginPage() {
-  const { login, loginAsGuest } = useAuth()
+  const { login } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -18,17 +18,6 @@ export default function LoginPage() {
     } catch {
       setError('Usuario o contraseña incorrectos.')
     } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleGuest() {
-    setLoading(true)
-    setError('')
-    try {
-      await loginAsGuest()
-    } catch {
-      setError('Error al conectar con el servidor.')
       setLoading(false)
     }
   }
@@ -67,7 +56,7 @@ export default function LoginPage() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className={inputClass}
-                placeholder="Admin / CB / MG..."
+                placeholder="Admin / Milton / JC..."
               />
             </div>
 
@@ -91,15 +80,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-4 pt-4 border-t border-[#E2E8F0]">
-            <button
-              onClick={handleGuest}
-              disabled={loading}
-              className="w-full py-2 px-4 text-sm font-medium text-[#64748B] bg-white border border-[#E2E8F0] rounded-md hover:bg-slate-50 hover:text-[#0F172A] disabled:opacity-50 transition-colors"
-            >
-              Ingresar como invitado
-            </button>
-          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-[#94A3B8]">Uso interno · DOT4</p>

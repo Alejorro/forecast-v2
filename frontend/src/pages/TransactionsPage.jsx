@@ -336,9 +336,11 @@ export default function TransactionsPage() {
             {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </FilterSelect>
 
-          <FilterSelect value={sellerFilter} onChange={setSellerFilter} placeholder={t.transactions.allSellers}>
-            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </FilterSelect>
+          {user?.role !== 'seller' && (
+            <FilterSelect value={sellerFilter} onChange={setSellerFilter} placeholder={t.transactions.allSellers}>
+              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </FilterSelect>
+          )}
 
           <StageMultiSelect selectedStages={selectedStages} onChange={setSelectedStages} />
 

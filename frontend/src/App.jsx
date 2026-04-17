@@ -9,6 +9,7 @@ import PlansPage from './pages/PlansPage'
 import ImportPage from './pages/ImportPage'
 import BrandsPage from './pages/BrandsPage'
 import SellersPage from './pages/SellersPage'
+import PerformancePage from './pages/PerformancePage'
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState('transactions')
@@ -27,6 +28,8 @@ function AppContent() {
         return <SellersPage />
       case 'import':
         return <ImportPage />
+      case 'performance':
+        return <PerformancePage />
       default:
         return <TransactionsPage />
     }

@@ -533,7 +533,7 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ## 14. Implementation State
 
-> Last updated: 2026-04-10
+> Last updated: 2026-04-17
 
 ### What is built
 
@@ -555,6 +555,9 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] `highlight_color` field on transactions (`TEXT`, nullable, values: `green/yellow/orange/red`)
 - [x] Migration script for `highlight_color` column (`backend/scripts/migrate-add-highlight-color.js`)
 - [x] `transaction_type` field on transactions (`TEXT`, nullable, values: `BAU/EXPAND/NEW CLIENT`); added via `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in `schema.sql`
+- [x] Role-based access control: 14 seller accounts + admin. Sellers see/edit only own transactions. Backend enforced on all routes. Guest login removed.
+- [x] `PUT /transactions/:id` opened to sellers (own only). Previously admin-only.
+- [x] `GET /api/performance` endpoint — seller performance summary (backend/routes/performance.js)
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`
@@ -563,6 +566,9 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Naming unified: `1Q-4Q` → `Q1-Q4` throughout frontend and `backend/lib/forecast.js`
 - [x] Highlight color field in transaction drawer — toggle dots (green/yellow/orange/red, click to select/deselect)
 - [x] Transaction row highlight — colored background based on `highlight_color` (overrides striping, not LOSS rows)
+- [x] Seller UI restrictions: Plans/Sellers nav hidden, seller filter hidden in transactions, seller field locked in drawer
+- [x] Performance page (`frontend/src/pages/PerformancePage.jsx`) — summary cards, stage bar chart, by-brand table, top open transactions
+- [x] Guest login removed from UI
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -579,6 +585,23 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [ ] `api.dot4sa.com.ar` DNS full propagation + SSL activation (Railway custom domain)
 - [ ] Run `highlight_color` DB migration against Railway production: `DATABASE_URL=<railway-url> node backend/scripts/migrate-add-highlight-color.js`
 - [ ] Merge `dev` branch to `main` (contains: Q1-Q4 UI, highlight_color, modal layout, Q1-Q4 naming rename)
+
+### Siguientes pasos (mejoras identificadas)
+
+**Alta prioridad:**
+- [ ] Página de inicio para sellers — redirigir a Performance en vez de Transacciones al loguearse
+- [ ] Indicador visual del vendedor logueado — más prominente en el nav (hoy es texto chico)
+- [ ] "Sin datos" en Performance cuando admin no eligió vendedor — reemplazar cards vacías por mensaje "Seleccioná un vendedor para ver su performance"
+
+**Media prioridad:**
+- [ ] Filtro de trimestre en Performance — hoy solo filtra por año
+- [ ] Export a PDF/CSV desde Performance — para que el vendedor baje su resumen
+- [ ] Notificación de transacciones próximas a vencer — badge o sección "vencen esta semana"
+
+**Mayor esfuerzo:**
+- [ ] Historial de cambios por transacción — quién editó qué y cuándo (ya existe `updated_at`, falta registrar `updated_by`)
+- [ ] Vista de pipeline tipo kanban — columnas por etapa, drag & drop para cambiar stage
+- [ ] Comparación entre vendedores — gráfico de barras en Performance (admin) con todos juntos
 
 ---
 
@@ -677,20 +700,19 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 ### Auth
 | Method | Route | Access | Description |
 |---|---|---|---|
-| POST | `/auth/login` | public | Login with `{ username, password }`. Returns `{ role, sellerCode, sellerName }` |
-| POST | `/auth/guest` | public | Start a read-only guest session |
+| POST | `/auth/login` | public | Login with `{ username, password }`. Returns `{ role, sellerName, sellerId }` |
 | POST | `/auth/logout` | any | Destroy session |
 | GET  | `/auth/me` | any | Return current session user |
 
 ### Transactions
 | Method | Route | Access | Description |
 |---|---|---|---|
-| GET    | `/transactions` | open | List transactions. Filters: `year`, `brand_id`, `seller_id`, `stage_label`, `quarter`, `include_loss`, `search` |
-| GET    | `/transactions/:id` | open | Get single transaction |
-| POST   | `/transactions` | admin, seller | Create transaction. Seller: `seller_id` must match own identity |
-| PUT    | `/transactions/:id` | admin only | Edit transaction |
+| GET    | `/transactions` | open | List. Sellers: filtered to own `seller_id` automatically. Filters: `year`, `brand_id`, `seller_id`, `stage_label`, `quarter`, `include_loss`, `search` |
+| GET    | `/transactions/:id` | open | Get single. Sellers: 403 if not their own. |
+| POST   | `/transactions` | admin, seller | Create. Seller: `seller_id` must match session `sellerId` |
+| PUT    | `/transactions/:id` | admin, seller | Edit. Seller: only their own transactions |
 | DELETE | `/transactions/:id` | admin only | Soft delete |
-| POST   | `/transactions/:id/duplicate` | admin, seller | Duplicate. Seller: can only duplicate own transactions |
+| POST   | `/transactions/:id/duplicate` | admin, seller | Duplicate. Seller: only own transactions |
 
 ### Plans
 | Method | Route | Access | Description |
@@ -707,11 +729,11 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | GET | `/overview` | open | Year-level forecast summary. Query: `?year=YYYY` |
 | GET | `/brands/:id/summary` | open | Brand-level summary |
 | GET | `/sellers/summary` | open | Seller contribution summary |
+| GET | `/performance` | admin, seller | Seller performance data. Query: `?year=YYYY&seller_id=N`. Sellers always see own data. |
 
 ### Auth model summary
-- **Admin:** full access to all routes
-- **Seller:** read all + create/duplicate own transactions only
-- **Guest:** read-only (all GET endpoints)
+- **Admin:** full access to all routes and all data
+- **Seller:** read/write own transactions only + access to Performance. Cannot delete, cannot access Plans or Sellers module.
 - Authentication: session cookie (`dot4.sid`), 8-hour expiry
 
 ---
@@ -723,38 +745,41 @@ Implemented as simple session-based auth. No JWT, no OAuth, no external provider
 ### Roles
 | Role | How to access | Permissions |
 |---|---|---|
-| admin | username: `Admin`, password: `alejocapo` | Full access |
-| seller | username: seller code, password: code + `123` | Read all + create/duplicate own transactions |
-| guest | POST `/api/auth/guest` (no credentials) | Read only |
+| admin | username: `admin`, password: `alejocapo` | Full access to all data and modules |
+| seller | username/password per table below | Own transactions only. Can read/write/edit but not delete. Cannot access Plans or Sellers modules. |
 
 ### Seller accounts
-| Code | Name | Password |
+| Username | Password | Seller (DB) |
 |---|---|---|
-| CB | Christian Braun | CB123 |
-| MG | Milton Gallo | MG123 |
-| CL | Carlos Lopez | CL123 |
-| MV | Mathias Villamayor | MV123 |
-| MB | Mariano Basso | MB123 |
-| FVI | Fabio Villamayor | FVI123 |
-| FV | Florencia Vargas | FV123 |
-| NC | NEW CLIENT | NC123 |
-| OO | Oscar Ontano | OO123 |
-| AS | Alejandro Simeone | AS123 |
-| ST | Sandra Tedesco | ST123 |
-| BZ | Brian Zino | BZ123 |
-| CF | Carlos Furnkorn | CF123 |
-| CG | Claudio Guerra | CG123 |
-| JCR | Juan Carlos Romitelli | JCR123 |
+| Alejandro | alejandro3847 | Alejandro Simeone |
+| Brian | brian7293 | Brian Zino |
+| CarlosF | carlosf5621 | Carlos Furnkorn |
+| CarlosL | carlosl8274 | Carlos Lopez |
+| Christian | christian4519 | Christian Braun |
+| Claudio | claudio6382 | Claudio Guerra |
+| Fabio | fabio2947 | Fabio Villamayor |
+| Florencia | florencia8163 | Florencia Vargas |
+| JC | jc4728 | Juan Carlos Romitelli |
+| Mariano | mariano3651 | Mariano Basso |
+| Mathias | mathias9274 | Mathias Villamayor |
+| Milton | milton5839 | Milton Gallo |
+| Oscar | oscar7162 | Oscar Ontano |
+| Sandra | sandra4803 | Sandra Tedesco |
 
-Login is case-insensitive for both username and password.
+Login is case-insensitive for username. Guest login has been removed.
 
 ### Key files
-- `backend/auth/users.js` — hardcoded user registry and `findUser()`
+- `backend/auth/users.js` — hardcoded user registry and `findUser()`. Returns `{ role, sellerName }`.
 - `backend/middleware/auth.js` — `attachUser`, `requireAdmin`, `requireWrite`
-- `backend/routes/auth.js` — login, guest, logout, me endpoints
+- `backend/routes/auth.js` — login, logout, me endpoints. On seller login: looks up `seller_id` from DB and stores it in session.
 
 ### Seller identity enforcement
-When a seller creates or duplicates a transaction, the backend looks up their `seller_id` from the `sellers` table via `name_normalized` and rejects any request where `seller_id` doesn't match.
+The session stores `sellerId` (the DB `id` from the `sellers` table). On every restricted operation:
+- `GET /transactions`: `seller_id` query param is overridden with session `sellerId`
+- `GET /transactions/:id`: 403 if `seller_id` doesn't match
+- `POST /transactions`: rejects if submitted `seller_id` ≠ session `sellerId`
+- `PUT /transactions/:id`: 403 if transaction's `seller_id` ≠ session `sellerId`
+- `DELETE /transactions/:id`: always admin-only
 
 ---
 

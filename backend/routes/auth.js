@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { findUser } from '../auth/users.js';
+import pool from '../db.js';
 
 const router = Router();
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { username, password } = req.body ?? {};
 
   if (!username || !password) {
@@ -16,19 +17,22 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
-  req.session.user = user;
+  let sellerId = null;
+  if (user.role === 'seller' && user.sellerName) {
+    const { rows } = await pool.query(
+      'SELECT id FROM sellers WHERE name_normalized = $1',
+      [user.sellerName.toLowerCase().trim()]
+    );
+    sellerId = rows[0]?.id ?? null;
+  }
+
+  req.session.user = { role: user.role, sellerName: user.sellerName, sellerId };
 
   res.json({
     role:       user.role,
-    sellerCode: user.sellerCode ?? null,
     sellerName: user.sellerName ?? null,
+    sellerId:   sellerId,
   });
-});
-
-// POST /api/auth/guest — enter as read-only guest
-router.post('/guest', (req, res) => {
-  req.session.user = { role: 'guest' };
-  res.json({ role: 'guest' });
 });
 
 // POST /api/auth/logout
@@ -46,8 +50,8 @@ router.get('/me', (req, res) => {
 
   res.json({
     role:       user.role,
-    sellerCode: user.sellerCode ?? null,
     sellerName: user.sellerName ?? null,
+    sellerId:   user.sellerId  ?? null,
   });
 });
 

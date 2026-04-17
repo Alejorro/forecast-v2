@@ -11,6 +11,7 @@ import plansRouter        from './routes/plans.js';
 import overviewRouter     from './routes/overview.js';
 import summaryRouter      from './routes/summary.js';
 import authRouter         from './routes/auth.js';
+import performanceRouter  from './routes/performance.js';
 
 import { attachUser, requireAdmin } from './middleware/auth.js';
 
@@ -78,7 +79,8 @@ app.use('/api/plans', (req, res, next) => {
   next();
 }, plansRouter);
 
-app.use('/api/overview', overviewRouter);
+app.use('/api/overview',     overviewRouter);
+app.use('/api/performance', performanceRouter);
 
 // summary routes: /api/brands/:id/summary and /api/sellers/summary
 app.use('/api', summaryRouter);

@@ -4,31 +4,21 @@ import { useAuth } from '../context/AuthContext'
 import t from '../utils/t'
 
 const NAV_ITEMS = [
-  { id: 'overview',      label: t.nav.overview },
-  { id: 'transactions',  label: t.nav.transactions },
-  { id: 'plans',         label: t.nav.plans },
-  { id: 'brands',        label: t.nav.brands },
-  { id: 'sellers',       label: t.nav.sellers },
-  { id: 'import',        label: t.nav.import,   adminOnly: true, hidden: true },
+  { id: 'overview',     label: t.nav.overview },
+  { id: 'transactions', label: t.nav.transactions },
+  { id: 'plans',        label: t.nav.plans,    sellerHidden: true },
+  { id: 'brands',       label: t.nav.brands },
+  { id: 'sellers',      label: t.nav.sellers,  hidden: true },
+  { id: 'performance',  label: 'Performance' },
+  { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
 function UserBadge({ user, onLogout }) {
-  const isGuest = user.role === 'guest'
   const isSeller = user.role === 'seller'
-
-  const name = isGuest
-    ? 'Invitado'
-    : isSeller
-    ? `${user.sellerCode} · ${user.sellerName}`
-    : 'Admin'
+  const name = isSeller ? user.sellerName : 'Admin'
 
   return (
     <div className="flex items-center gap-2 flex-shrink-0">
-      {isGuest && (
-        <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 rounded">
-          Solo lectura
-        </span>
-      )}
       <span className="text-xs text-[#64748B] font-medium">{name}</span>
       <button
         onClick={onLogout}
@@ -44,11 +34,11 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
   const { year, setYear, yearOptions } = useAppContext()
   const { user, logout } = useAuth()
 
-  const isGuest = user?.role === 'guest'
+  const isSeller = user?.role === 'seller'
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.hidden) return false
-    if (item.adminOnly && isGuest) return false
+    if (item.sellerHidden && isSeller) return false
     return true
   })
 

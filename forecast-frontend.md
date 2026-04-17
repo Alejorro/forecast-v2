@@ -29,15 +29,22 @@ App Shell
 ├── [Top nav — always visible]
 │   ├── Logo / App name
 │   ├── Year selector (global, affects all screens)
-│   └── Nav: Overview | Transactions | Plans | Brands | Sellers | Import
+│   └── Nav: Overview | Transactions | [Plans*] | Brands | [Sellers*] | Performance | Import
+│       (* hidden for seller role)
 │
 ├── Overview          (default landing)
 ├── Transactions      (primary operational screen)
-├── Plans             (target management)
+├── Plans             (target management — admin only)
 ├── Brands            (brand-level analysis)
-├── Sellers           (seller-level analysis)
-└── Import / Audit    (data ingestion)
+├── Sellers           (seller-level analysis — admin only)
+├── Performance       (seller KPIs — visible to all roles)
+└── Import / Audit    (data ingestion — admin only, hidden from nav)
 ```
+
+### Role-based nav visibility
+- **Admin:** all items visible
+- **Seller:** Plans and Sellers hidden; Performance visible
+- Guest login has been removed
 
 ### Global year selector
 - Persists in the top navigation at all times.

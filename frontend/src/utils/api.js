@@ -27,10 +27,6 @@ export function login(username, password) {
   })
 }
 
-export function loginAsGuest() {
-  return request('/api/auth/guest', { method: 'POST' })
-}
-
 export function logout() {
   return request('/api/auth/logout', { method: 'POST' })
 }
@@ -96,6 +92,16 @@ export function getSellersSummary(year) {
 // --- Overview ---
 export function getOverview(year) {
   return request(`/api/overview?year=${year}`)
+}
+
+// --- Performance ---
+export function getPerformance(params = {}) {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
+  })
+  const query = qs.toString()
+  return request(`/api/performance${query ? `?${query}` : ''}`)
 }
 
 // --- Plans ---

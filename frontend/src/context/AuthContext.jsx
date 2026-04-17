@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react'
-import { getMe, login as apiLogin, loginAsGuest as apiLoginAsGuest, logout as apiLogout } from '../utils/api'
+import { getMe, login as apiLogin, logout as apiLogout } from '../utils/api'
 
 const AuthContext = createContext(null)
 
@@ -20,19 +20,13 @@ export function AuthProvider({ children }) {
     return u
   }
 
-  async function loginAsGuest() {
-    const u = await apiLoginAsGuest()
-    setUser(u)
-    return u
-  }
-
   async function logout() {
     await apiLogout()
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginAsGuest, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

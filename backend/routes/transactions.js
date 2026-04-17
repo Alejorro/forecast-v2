@@ -105,22 +105,12 @@ function resolveAllocations(body) {
   };
 }
 
-async function enforceSellerIdentity(user, submittedSellerId) {
+function enforceSellerIdentity(user, submittedSellerId) {
   if (!user || user.role !== 'seller') return null;
-
-  const { rows } = await pool.query(
-    'SELECT id FROM sellers WHERE name_normalized = $1',
-    [user.sellerName.toLowerCase().trim()]
-  );
-
-  if (!rows[0]) {
-    return `Seller account not found in database for: ${user.sellerName}`;
-  }
-
-  if (Number(submittedSellerId) !== rows[0].id) {
+  if (!user.sellerId) return 'Seller account not linked. Contact an admin.';
+  if (Number(submittedSellerId) !== user.sellerId) {
     return 'You can only create transactions under your own seller identity';
   }
-
   return null;
 }
 
@@ -135,7 +125,11 @@ const TX_SELECT = `
 
 // GET /api/transactions
 router.get('/', async (req, res) => {
-  const { where, bindings } = buildListQuery(req.query);
+  const params = { ...req.query };
+  if (req.user?.role === 'seller') {
+    params.seller_id = req.user.sellerId;
+  }
+  const { where, bindings } = buildListQuery(params);
 
   const { rows } = await pool.query(`
     ${TX_SELECT}
@@ -154,6 +148,11 @@ router.get('/:id', async (req, res) => {
   `, [Number(req.params.id)]);
 
   if (!rows[0]) return res.status(404).json({ error: 'Transaction not found' });
+
+  if (req.user?.role === 'seller' && rows[0].seller_id !== req.user.sellerId) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
   res.json(deriveTransaction(rows[0]));
 });
 
@@ -162,7 +161,7 @@ router.post('/', requireWrite, async (req, res) => {
   const body = req.body;
   const isLossRow = body.stage_label === 'LOSS';
 
-  const sellerErr = await enforceSellerIdentity(req.user, body.seller_id);
+  const sellerErr = enforceSellerIdentity(req.user, body.seller_id);
   if (sellerErr) return res.status(403).json({ error: sellerErr });
 
   if (!body.client_name) return res.status(400).json({ error: 'client_name is required' });
@@ -273,13 +272,17 @@ router.post('/', requireWrite, async (req, res) => {
   res.status(201).json(deriveTransaction(created[0]));
 });
 
-// PUT /api/transactions/:id — admin only
-router.put('/:id', requireAdmin, async (req, res) => {
+// PUT /api/transactions/:id — admin or seller (own only)
+router.put('/:id', requireWrite, async (req, res) => {
   const id = Number(req.params.id);
   const { rows: existing } = await pool.query(
-    'SELECT id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+    'SELECT id, seller_id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
   );
   if (!existing[0]) return res.status(404).json({ error: 'Transaction not found' });
+
+  if (req.user?.role === 'seller' && existing[0].seller_id !== req.user.sellerId) {
+    return res.status(403).json({ error: 'You can only edit your own transactions' });
+  }
 
   const body = req.body;
   const isLossRow = body.stage_label === 'LOSS';
@@ -441,7 +444,7 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
 
   const original = origRows[0];
 
-  const sellerErr = await enforceSellerIdentity(req.user, original.seller_id);
+  const sellerErr = enforceSellerIdentity(req.user, original.seller_id);
   if (sellerErr) return res.status(403).json({ error: sellerErr });
 
   const { rows: inserted } = await pool.query(`
