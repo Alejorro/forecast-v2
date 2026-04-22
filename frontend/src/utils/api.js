@@ -31,6 +31,10 @@ export function logout() {
   return request('/api/auth/logout', { method: 'POST' })
 }
 
+export function invalidateAllSessions() {
+  return request('/api/auth/invalidate-all', { method: 'POST' })
+}
+
 // --- Brands ---
 export function getBrands() {
   return request('/api/brands')

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { findUser } from '../auth/users.js';
 import pool from '../db.js';
+import { sessionVersion, bumpSessionVersion } from '../server.js';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.post('/login', async (req, res) => {
     sellerId = rows[0]?.id ?? null;
   }
 
-  req.session.user = { username: user.username, role: user.role, sellerName: user.sellerName, sellerId };
+  req.session.user = { username: user.username, role: user.role, sellerName: user.sellerName, sellerId, sessionVersion };
 
   res.json({
     username:   user.username,
@@ -42,6 +43,17 @@ router.post('/logout', (req, res) => {
     res.clearCookie('dot4.sid');
     res.json({ ok: true });
   });
+});
+
+// POST /api/auth/invalidate-all — bump session version, forces all users to re-login
+router.post('/invalidate-all', (req, res) => {
+  const role = req.session?.user?.role;
+  if (role !== 'admin' && role !== 'manager') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+  bumpSessionVersion();
+  req.session.destroy(() => {});
+  res.json({ ok: true });
 });
 
 // GET /api/auth/me — returns current session user

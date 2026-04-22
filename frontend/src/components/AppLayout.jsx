@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useAppContext } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
+import { invalidateAllSessions } from '../utils/api'
 import t from '../utils/t'
 
 const NAV_ITEMS = [
@@ -14,7 +15,7 @@ const NAV_ITEMS = [
   { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
-function UserBadge({ user, onLogout }) {
+function UserBadge({ user, onLogout, onInvalidateAll }) {
   const isSeller = user.role === 'seller'
   const isManager = user.role === 'manager'
   const name = isSeller ? user.sellerName : (user.username || 'Admin')
@@ -41,6 +42,15 @@ function UserBadge({ user, onLogout }) {
           )}
         </div>
       </div>
+      {(user.role === 'admin' || user.role === 'manager') && (
+        <button
+          onClick={onInvalidateAll}
+          className="text-xs text-amber-500 hover:text-amber-700 px-2 py-1 rounded hover:bg-amber-50 transition-colors"
+          title="Cerrar todas las sesiones activas"
+        >
+          Cerrar sesiones
+        </button>
+      )}
       <button
         onClick={onLogout}
         className="text-xs text-[#94A3B8] hover:text-[#64748B] px-2 py-1 rounded hover:bg-slate-100 transition-colors"
@@ -57,6 +67,18 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
 
   const isSeller = user?.role === 'seller'
   const isManager = user?.role === 'manager'
+  const [invalidating, setInvalidating] = useState(false)
+
+  async function handleInvalidateAll() {
+    if (!window.confirm('¿Cerrar todas las sesiones activas? Todos los usuarios deberán volver a loguearse.')) return
+    setInvalidating(true)
+    try {
+      await invalidateAllSessions()
+      logout()
+    } finally {
+      setInvalidating(false)
+    }
+  }
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.hidden) return false
@@ -117,7 +139,7 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
             {user && (
               <>
                 <div className="w-px h-5 bg-[#E2E8F0]" />
-                <UserBadge user={user} onLogout={logout} />
+                <UserBadge user={user} onLogout={logout} onInvalidateAll={handleInvalidateAll} />
               </>
             )}
           </div>
