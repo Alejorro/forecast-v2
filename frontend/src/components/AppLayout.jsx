@@ -10,7 +10,7 @@ const NAV_ITEMS = [
   { id: 'brands',       label: t.nav.brands },
   { id: 'sellers',      label: t.nav.sellers,  sellerHidden: true },
   { id: 'performance',  label: 'Performance' },
-  { id: 'activity',     label: 'Actividad',    sellerHidden: true },
+  { id: 'activity',     label: 'Actividad',    managerOnly: true },
   { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
@@ -56,10 +56,12 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
   const { user, logout } = useAuth()
 
   const isSeller = user?.role === 'seller'
+  const isManager = user?.role === 'manager'
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.hidden) return false
     if (item.sellerHidden && isSeller) return false
+    if (item.managerOnly && !isManager) return false
     return true
   })
 

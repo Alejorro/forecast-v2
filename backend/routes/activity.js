@@ -3,10 +3,10 @@ import pool from '../db.js';
 
 const router = Router();
 
-// GET /api/activity — accessible to admin and manager only
+// GET /api/activity — accessible to manager only
 router.get('/', async (req, res) => {
   const role = req.user?.role;
-  if (role !== 'admin' && role !== 'manager') {
+  if (role !== 'manager') {
     return res.status(403).json({ error: 'Access denied' });
   }
 
