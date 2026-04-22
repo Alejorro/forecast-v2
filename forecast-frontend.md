@@ -29,7 +29,7 @@ App Shell
 ├── [Top nav — always visible]
 │   ├── Logo / App name
 │   ├── Year selector (global, affects all screens)
-│   └── Nav: Overview | Transactions | [Plans*] | Brands | [Sellers†] | Performance | [Actividad†] | [Import*]
+│   └── Nav: Overview | Transactions | [Plans*] | Brands | [Sellers†] | Performance | Ventas† | [Actividad†] | [Import*]
 │       (* hidden for seller; † hidden for seller)
 │
 ├── Overview          (default landing for admin/manager)
@@ -45,7 +45,7 @@ App Shell
 ### Role-based nav visibility
 - **Admin:** all items visible; default landing = Transactions (Overview)
 - **Manager (Alejorro):** same as admin except Import tab hidden; default landing = Transactions (Overview)
-- **Seller:** Plans, Sellers, Actividad, and Import hidden; **default landing = Performance** (redirected on login)
+- **Seller:** Plans, Sellers, Ventas, Actividad, and Import hidden; **default landing = Performance** (redirected on login)
 - Guest login has been removed
 
 ### User badge (top-right nav)
@@ -377,6 +377,34 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 **Data source:** `GET /api/activity` — up to 300 logs ordered by `created_at DESC`.
 
 ---
+
+### Screen: Ventas
+
+**Purpose:** View and manage sales imported from Odoo (`sale.order`). Separate from forecast transactions.
+
+**Access:** Admin and manager only (hidden from sellers).
+
+**KPI Cards (top, when data available):**
+- Total Empresa — sum of all `amount_usd_official`
+- Total Facturado — sum where `invoice_status = 'invoiced'` (green)
+- Total por Facturar — sum where `invoice_status = 'to invoice'` (amber)
+
+**Brand Summary table (when data available):**
+Brand | Facturado | Por facturar | Total — computed client-side from loaded data.
+
+**Filter bar:** Client search, Brand (from loaded data), Seller, Invoice Status, Quarter.
+
+**Toolbar:** Count label + "Sincronizar Odoo" button (admin/manager). After sync, shows inline result: "Sincronizado: N ventas · M avisos".
+
+**Main table columns:** Cliente, Brand, Vendedor, Estado, Total original, Moneda, USD oficial, Fecha, Referencia.
+- Clicking any row opens the VentasDrawer.
+- Row highlight applies if `highlight_color` is set (same color system as transactions).
+- "Sin TC" shown in USD oficial column when `amount_usd_official` is null (FX rate missing).
+
+**VentasDrawer (slides from right):**
+- Section A — "Datos Odoo" (read-only): reference, client, brand, Odoo seller name, linked seller (if matched), invoice status badge, sale date, quarter, year, currency, original amount, USD oficial, FX rate used, FX rate date, last sync.
+- Section B — "Campos internos" (editable): highlight color dots (green/yellow/orange/red), notes textarea, provider field, internal tags field.
+- Save persists only the internal fields via `PATCH /api/ventas/:id`.
 
 ### Screen 7: Import / Audit
 

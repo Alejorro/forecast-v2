@@ -7,11 +7,12 @@ import t from '../utils/t'
 const NAV_ITEMS = [
   { id: 'overview',     label: t.nav.overview },
   { id: 'transactions', label: t.nav.transactions },
-  { id: 'plans',        label: t.nav.plans,    sellerHidden: true },
+  { id: 'plans',        label: t.nav.plans,   sellerHidden: true },
   { id: 'brands',       label: t.nav.brands },
-  { id: 'sellers',      label: t.nav.sellers,  sellerHidden: true },
   { id: 'performance',  label: 'Performance' },
-  { id: 'activity',     label: 'Actividad',    managerOnly: true },
+  { id: 'sellers',      label: t.nav.sellers,  managerOnly: true, separator: true },
+  { id: 'ventas',       label: 'Ventas',        managerOnly: true },
+  { id: 'activity',     label: 'Actividad',     managerOnly: true },
   { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
@@ -84,6 +85,7 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
     if (item.hidden) return false
     if (item.sellerHidden && isSeller) return false
     if (item.managerOnly && !isManager) return false
+    if (item.adminOnly && !isManager) return false
     return true
   })
 
@@ -103,18 +105,22 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
             {visibleNav.map((item) => {
               const isActive = currentPage === item.id
               return (
-                <button
-                  key={item.id}
-                  onClick={() => onNavigate(item.id)}
-                  className={[
-                    'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                    isActive
-                      ? 'text-[#2563EB] bg-blue-50'
-                      : 'text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50',
-                  ].join(' ')}
-                >
-                  {item.label}
-                </button>
+                <React.Fragment key={item.id}>
+                  {item.separator && (
+                    <div className="w-px h-4 bg-[#E2E8F0] mx-1 flex-shrink-0" />
+                  )}
+                  <button
+                    onClick={() => onNavigate(item.id)}
+                    className={[
+                      'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
+                      isActive
+                        ? 'text-[#2563EB] bg-blue-50'
+                        : 'text-[#64748B] hover:text-[#0F172A] hover:bg-slate-50',
+                    ].join(' ')}
+                  >
+                    {item.label}
+                  </button>
+                </React.Fragment>
               )
             })}
           </nav>

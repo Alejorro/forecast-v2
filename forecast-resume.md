@@ -538,7 +538,7 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ## 14. Implementation State
 
-> Last updated: 2026-04-17
+> Last updated: 2026-04-22
 
 ### What is built
 
@@ -567,9 +567,12 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] `loss_reason` TEXT column on transactions — required by backend when `stage_label = 'LOSS'`
 - [x] `updated_by`, `won_at`, `loss_at` audit columns on transactions — set/cleared on stage changes
 - [x] `activity_logs` table — `(id, action, entity_id, performed_by, performed_by_role, details JSONB, created_at)`
-- [x] `GET /api/activity` endpoint — filtered log, admin/manager only (`backend/routes/activity.js`)
+- [x] `GET /api/activity` endpoint — filtered log, **manager only** (`backend/routes/activity.js`)
 - [x] `backend/lib/activity.js` — `logActivity()` helper, fire-and-forget (not awaited)
 - [x] Manager role (`Alejorro`) — full access identical to admin; `requireAdmin` and `requireWrite` both accept 'manager'
+- [x] `POST /api/auth/invalidate-all` — bumps session version, forces all users to re-login; manager only
+- [x] `backend/lib/session-version.js` — session version counter; imported by auth middleware and auth routes (avoids circular dependency)
+- [x] Brian, Claudio, JC, Mariano promoted to `admin` role
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`
@@ -587,8 +590,12 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] `loss_reason` mandatory textarea in drawer when `stage_label = LOSS`
 - [x] `due_date` field removed from drawer; `year` derived from global year selector
 - [x] Audit info shown in drawer (updated_by, won_at, loss_at) when editing
-- [x] Activity page (`frontend/src/pages/ActivityPage.jsx`) — action log table with filters by user and action type
+- [x] Activity page (`frontend/src/pages/ActivityPage.jsx`) — action log table with filters by user and action type; **manager only**
 - [x] `getActivity()` added to `frontend/src/utils/api.js`
+- [x] Delete button hidden from sellers in transaction drawer
+- [x] "Cerrar sesiones" button in nav — **manager only**; calls `/api/auth/invalidate-all`
+- [x] Session-expired detection — any mid-session 401 triggers redirect to login with amber notice: "Tu sesión fue cerrada por el administrador."
+- [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Requires env vars: `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_PASSWORD`.
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -601,10 +608,12 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ### What is pending
 
+- [ ] Ventas: set `odoo_user_id` on existing sellers (direct DB or future admin UI) for full Odoo→seller mapping
+- [ ] Ventas: populate `fx_rates` table with historical rates before running sync (via `POST /api/ventas/fx-rates`)
+- [ ] Ventas: configure `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_PASSWORD` env vars in Railway
 - [ ] Excel import endpoint (UI-triggered via API, not just CLI script)
 - [ ] `api.dot4sa.com.ar` DNS full propagation + SSL activation (Railway custom domain)
 - [ ] Run `highlight_color` DB migration against Railway production: `DATABASE_URL=<railway-url> node backend/scripts/migrate-add-highlight-color.js`
-- [ ] Merge `dev` branch to `main` (contains: Q1-Q4 UI, highlight_color, modal layout, Q1-Q4 naming rename)
 
 ### Siguientes pasos (mejoras identificadas)
 
@@ -752,7 +761,19 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | GET | `/brands/:id/summary` | open | Brand-level summary |
 | GET | `/sellers/summary` | open | Seller contribution summary |
 | GET | `/performance` | admin, manager, seller | Seller performance data. Query: `?year=YYYY&seller_id=N`. Sellers always see own data. |
-| GET | `/activity` | admin, manager | Activity log. Query: `?performed_by=X&action=Y&limit=N` (max 500, default 300). Returns actions ordered by `created_at DESC`. |
+| GET | `/activity` | manager only | Activity log. Query: `?performed_by=X&action=Y&limit=N` (max 500, default 300). Returns actions ordered by `created_at DESC`. |
+| POST | `/auth/invalidate-all` | manager only | Bump session version — forces all active sessions to re-login on next request. |
+
+### Ventas (Odoo Sales)
+| Method | Route | Access | Description |
+|---|---|---|---|
+| GET | `/ventas` | open | List sales. Filters: `year`, `quarter`, `brand`, `seller_id`, `invoice_status`, `search` |
+| GET | `/ventas/summary` | open | KPI aggregates + brand breakdown. Same filters as list. |
+| GET | `/ventas/:id` | open | Single sale |
+| PATCH | `/ventas/:id` | admin, manager | Update internal fields: `notes`, `provider`, `internal_tags`, `highlight_color` |
+| POST | `/ventas/sync` | admin, manager | Trigger Odoo sync. Fetches `sale.order` where `invoice_status` IN `('to invoice', 'invoiced')`. Returns `{ fetched, upserted, failed, warnings }` |
+| GET | `/ventas/fx-rates` | admin, manager | List recent FX rates |
+| POST | `/ventas/fx-rates` | admin, manager | Upsert a FX rate. Body: `{ rate_date, currency, rate }`. `rate` follows Odoo convention: 1 ARS = rate [currency]. `currency` ∈ `USD_OFFICIAL`, `BLUE`, `MEP` |
 
 ### Auth model summary
 - **Admin:** full access to all routes and all data
@@ -774,19 +795,23 @@ Implemented as simple session-based auth. No JWT, no OAuth, no external provider
 | manager | username: `Alejorro`, password: `alejorro97` | Full access identical to admin (create/edit/delete transactions, modify plans, see all modules). Import tab not shown in nav. |
 | seller | username/password per table below | Own transactions only. Can read/write/edit but not delete. Cannot access Plans or Sellers modules. |
 
+### Admin accounts (non-superadmin)
+| Username | Password | Seller (DB) |
+|---|---|---|
+| Brian | brian7293 | Brian Zino |
+| Claudio | claudio6382 | Claudio Guerra |
+| JC | jc4728 | Juan Carlos Romitelli |
+| Mariano | mariano3651 | Mariano Basso |
+
 ### Seller accounts
 | Username | Password | Seller (DB) |
 |---|---|---|
 | Alejandro | alejandro3847 | Alejandro Simeone |
-| Brian | brian7293 | Brian Zino |
 | CarlosF | carlosf5621 | Carlos Furnkorn |
 | CarlosL | carlosl8274 | Carlos Lopez |
 | Christian | christian4519 | Christian Braun |
-| Claudio | claudio6382 | Claudio Guerra |
 | Fabio | fabio2947 | Fabio Villamayor |
 | Florencia | florencia8163 | Florencia Vargas |
-| JC | jc4728 | Juan Carlos Romitelli |
-| Mariano | mariano3651 | Mariano Basso |
 | Mathias | mathias9274 | Mathias Villamayor |
 | Milton | milton5839 | Milton Gallo |
 | Oscar | oscar7162 | Oscar Ontano |

@@ -11,6 +11,7 @@ import BrandsPage from './pages/BrandsPage'
 import SellersPage from './pages/SellersPage'
 import PerformancePage from './pages/PerformancePage'
 import ActivityPage from './pages/ActivityPage'
+import VentasPage from './pages/VentasPage'
 
 function AppContent() {
   const { user } = useAuth()
@@ -36,6 +37,8 @@ function AppContent() {
         return <PerformancePage />
       case 'activity':
         return <ActivityPage />
+      case 'ventas':
+        return <VentasPage />
       default:
         return <TransactionsPage />
     }

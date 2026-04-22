@@ -13,6 +13,7 @@ import summaryRouter      from './routes/summary.js';
 import authRouter         from './routes/auth.js';
 import performanceRouter  from './routes/performance.js';
 import activityRouter     from './routes/activity.js';
+import ventasRouter       from './routes/ventas.js';
 
 import { attachUser, requireAdmin } from './middleware/auth.js';
 
@@ -33,7 +34,7 @@ app.use(cors({
     'https://forecast.dot4sa.com.ar',
     'https://forecast-v2-khaki.vercel.app',
   ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
   credentials: true,
 }));
@@ -84,6 +85,7 @@ app.use('/api/plans', (req, res, next) => {
 app.use('/api/overview',     overviewRouter);
 app.use('/api/performance', performanceRouter);
 app.use('/api/activity',   activityRouter);
+app.use('/api/ventas',     ventasRouter);
 
 // summary routes: /api/brands/:id/summary and /api/sellers/summary
 app.use('/api', summaryRouter);

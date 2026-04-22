@@ -78,3 +78,47 @@ CREATE TABLE IF NOT EXISTS activity_logs (
   details         JSONB,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Odoo user mapping on sellers (for Ventas sync)
+ALTER TABLE sellers ADD COLUMN IF NOT EXISTS odoo_user_id INTEGER;
+
+-- FX rates synced from Odoo's res.currency.rate.
+-- currency stores the Odoo currency name exactly: "USD", "US$", "PES", etc.
+-- rate convention (Odoo): 1 ARS = rate [currency]
+-- e.g. currency="USD"  rate=0.000909 → 1 ARS = 0.000909 USD
+-- e.g. currency="US$"  rate=0.00083  → 1 ARS = 0.00083 US$
+CREATE TABLE IF NOT EXISTS fx_rates (
+  id         SERIAL PRIMARY KEY,
+  rate_date  DATE   NOT NULL,
+  currency   TEXT   NOT NULL,  -- Odoo currency name: "USD", "US$", "PES", etc.
+  rate       REAL   NOT NULL,  -- 1 ARS = rate [currency]
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(rate_date, currency)
+);
+
+-- Sales imported from Odoo
+CREATE TABLE IF NOT EXISTS sales_odoo (
+  id                  SERIAL PRIMARY KEY,
+  odoo_sale_order_id  INTEGER NOT NULL UNIQUE,
+  reference           TEXT,
+  client_name         TEXT,
+  seller_id           INTEGER REFERENCES sellers(id),
+  seller_name_raw     TEXT,
+  brand               TEXT,
+  invoice_status      TEXT,
+  order_state         TEXT,
+  sale_date           DATE,
+  quarter             TEXT,
+  year                INTEGER,
+  currency_original   TEXT,
+  amount_original     REAL,
+  amount_usd_official REAL,
+  fx_rate_used        REAL,
+  fx_rate_date_used   DATE,
+  source              TEXT NOT NULL DEFAULT 'odoo_sales',
+  last_sync_at        TIMESTAMPTZ,
+  notes               TEXT,
+  provider            TEXT,
+  internal_tags       TEXT,
+  highlight_color     TEXT
+);

@@ -133,3 +133,43 @@ export function getActivity(params = {}) {
   const query = qs.toString()
   return request(`/api/activity${query ? `?${query}` : ''}`)
 }
+
+// --- Ventas (Odoo Sales) ---
+export function getVentas(params = {}) {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
+  })
+  const query = qs.toString()
+  return request(`/api/ventas${query ? `?${query}` : ''}`)
+}
+
+export function updateVentaInternal(id, data) {
+  return request(`/api/ventas/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+}
+
+export function syncVentas() {
+  return request('/api/ventas/sync', { method: 'POST' })
+}
+
+export function getVentasSellers() {
+  return request('/api/ventas/sellers')
+}
+
+export function getVentasBrands() {
+  return request('/api/ventas/brands')
+}
+
+export function getFxRates() {
+  return request('/api/ventas/fx-rates')
+}
+
+export function upsertFxRate(data) {
+  return request('/api/ventas/fx-rates', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
