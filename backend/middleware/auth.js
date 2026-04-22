@@ -3,13 +3,13 @@
  * Roles: admin | manager | seller
  */
 
-import { sessionVersion } from '../server.js';
+import { getSessionVersion } from '../lib/session-version.js';
 
 // Attach session user to req.user on every request.
 // If the session was created before the current sessionVersion, treat it as expired.
 export function attachUser(req, _res, next) {
   const u = req.session?.user;
-  if (u && u.sessionVersion !== sessionVersion) {
+  if (u && u.sessionVersion !== getSessionVersion()) {
     req.session.destroy(() => {});
     req.user = null;
   } else {

@@ -19,9 +19,6 @@ import { attachUser, requireAdmin } from './middleware/auth.js';
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
-// Session invalidation counter — bump to force all active sessions to re-login
-export let sessionVersion = 1;
-export function bumpSessionVersion() { sessionVersion++; }
 
 app.set('etag', false);
 app.set('trust proxy', 1); // Required for Railway — allows secure cookies behind reverse proxy

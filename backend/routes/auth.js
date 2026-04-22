@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { findUser } from '../auth/users.js';
 import pool from '../db.js';
-import { sessionVersion, bumpSessionVersion } from '../server.js';
+import { getSessionVersion, bumpSessionVersion } from '../lib/session-version.js';
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.post('/login', async (req, res) => {
     sellerId = rows[0]?.id ?? null;
   }
 
-  req.session.user = { username: user.username, role: user.role, sellerName: user.sellerName, sellerId, sessionVersion };
+  req.session.user = { username: user.username, role: user.role, sellerName: user.sellerName, sellerId, sessionVersion: getSessionVersion() };
 
   res.json({
     username:   user.username,
