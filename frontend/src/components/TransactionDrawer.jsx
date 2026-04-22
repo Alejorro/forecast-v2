@@ -813,7 +813,7 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
 
           <div className="flex items-center justify-between">
             <div>
-              {isEdit && !showDeleteConfirm && (
+              {isEdit && !showDeleteConfirm && user?.role !== 'seller' && (
                 <button
                   onClick={() => setShowDeleteConfirm(true)}
                   className="text-sm text-red-500 hover:text-red-700 transition-colors"
