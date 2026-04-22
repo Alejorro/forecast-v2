@@ -29,22 +29,29 @@ App Shell
 ├── [Top nav — always visible]
 │   ├── Logo / App name
 │   ├── Year selector (global, affects all screens)
-│   └── Nav: Overview | Transactions | [Plans*] | Brands | [Sellers*] | Performance | Import
-│       (* hidden for seller role)
+│   └── Nav: Overview | Transactions | [Plans*] | Brands | [Sellers†] | Performance | [Actividad†] | [Import*]
+│       (* hidden for seller; † hidden for seller)
 │
-├── Overview          (default landing)
+├── Overview          (default landing for admin/manager)
 ├── Transactions      (primary operational screen)
-├── Plans             (target management — admin only)
+├── Plans             (target management)
 ├── Brands            (brand-level analysis)
-├── Sellers           (seller-level analysis — admin only)
-├── Performance       (seller KPIs — visible to all roles)
-└── Import / Audit    (data ingestion — admin only, hidden from nav)
+├── Sellers           (seller-level analysis — hidden from sellers)
+├── Performance       (seller KPIs — visible to all roles; default landing for sellers)
+├── Actividad         (activity log — admin and manager only)
+└── Import / Audit    (data ingestion — admin only)
 ```
 
 ### Role-based nav visibility
-- **Admin:** all items visible
-- **Seller:** Plans and Sellers hidden; Performance visible
+- **Admin:** all items visible; default landing = Transactions (Overview)
+- **Manager (Alejorro):** same as admin except Import tab hidden; default landing = Transactions (Overview)
+- **Seller:** Plans, Sellers, Actividad, and Import hidden; **default landing = Performance** (redirected on login)
 - Guest login has been removed
+
+### User badge (top-right nav)
+- Shows a circular avatar (initial of name), the full name, and a role label below it.
+- Avatar: blue background + "Vendedor" label for sellers; violet background + "Manager" label for manager; gray for admin.
+- "Salir" logout button to the right.
 
 ### Global year selector
 - Persists in the top navigation at all times.
@@ -264,12 +271,16 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 | Seller | Required (dropdown from seller list) |
 | Type | Required for new transactions; optional when editing; dropdown: BAU / EXPAND / NEW CLIENT |
 | TCV | USD, required |
-| Stage | Required; dropdown with 5 options |
+| Stage | Required; dropdown with 6 options (Identified / Proposal 25/50/75 / Won / LOSS) |
 | Status | Optional; only valid value is LOSS |
-| Year | Defaults to the global year selector value |
 | Quarter | Q1 / Q2 / Q3 / Q4 / Q1-Q4 |
 | Q1-Q4 distribution | When Q1-Q4 is selected: 4 USD amount inputs appear (Q1/Q2/Q3/Q4). Pre-filled with TCV/4. Sum must equal TCV. Auto-balance on blur or via "Auto completar" button (max auto-adjust: $999). Adjusted quarter is highlighted in amber. |
+| Motivo de LOSS | Textarea; required when Stage = LOSS; hidden otherwise. Backend enforces this. |
 | Notes | Optional |
+
+**Year field removed from drawer:** Year is derived from the global year selector at creation time. It is not editable after the fact. `due_date` field has been removed entirely.
+
+**Audit section (edit mode only):** At the bottom of the drawer, shows `updated_by`, `won_at`, `loss_at` when editing an existing transaction. LOSS reason is also shown in a red-tinted box when editing an existing LOSS transaction.
 
 - **Live allocation preview** below the allocation fields: `Q1: $X | Q2: $X | Q3: $X | Q4: $X | Total: $X`
 - Allocation validation: inline error if sum ≠ 1.0. No auto-correction.
@@ -349,7 +360,25 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 
 ---
 
-### Screen 6: Import / Audit
+### Screen 6: Actividad (Activity Log)
+
+**Purpose:** Show all actions performed by sellers and admin on transactions.
+
+**Access:** Admin and manager only.
+
+**Filters:**
+- By user (`performed_by`) — populated from log data
+- By action type — `create`, `update`, `delete`, `duplicate`
+
+**Table columns:** Date/time, User (with role sub-label), Action (color-coded badge), Client, Brand, Stage (with `prev → new` arrow for edits), TCV.
+
+**States:** Loading skeleton, empty state when no logs match.
+
+**Data source:** `GET /api/activity` — up to 300 logs ordered by `created_at DESC`.
+
+---
+
+### Screen 7: Import / Audit
 
 **Purpose:** Ingest Excel data, validate, preview, and commit.
 
@@ -362,6 +391,28 @@ Use `tabular-nums` for all numeric columns to ensure alignment stability.
 - **Comparison Summary:** Before/after totals for the same year/brand
 - **Import Action:** "Import valid rows" button — skips rows with errors; shows count confirmation before committing
 - **Error report:** Download as CSV
+
+---
+
+### Screen 7: Performance
+
+**Purpose:** KPIs and pipeline breakdown for a specific seller.
+
+**Access:** Visible to both admin and sellers. Sellers always see their own data. Admin must select a seller via dropdown to see any data.
+
+**Admin state — no seller selected:**
+- Dropdown "Seleccioná un vendedor..." shown at top.
+- A centered empty state message replaces all content: "Seleccioná un vendedor para ver su performance". No cards, no charts, no API call fired.
+
+**Admin state — seller selected:**
+- Seller dropdown at top.
+- Summary cards (6): Transacciones, TCV Total, Ganadas, Abiertas, Win Rate, Perdidas.
+- Charts (2-col grid): Por etapa (bar chart) + Por brand (table).
+- Top oportunidades abiertas (table): Client, Brand, Stage, TCV, Weighted.
+
+**Seller state:**
+- No dropdown (auto-scoped to logged-in seller).
+- Same content as admin-with-seller-selected above.
 
 ---
 

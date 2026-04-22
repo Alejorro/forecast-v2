@@ -55,3 +55,26 @@ ALTER TABLE transactions ADD COLUMN IF NOT EXISTS transaction_type TEXT;
 
 -- Default existing rows to BAU
 UPDATE transactions SET transaction_type = 'BAU' WHERE transaction_type IS NULL;
+
+-- Year column (replaces due_date for year scoping; derived from global year selector at creation)
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS year INTEGER;
+UPDATE transactions SET year = EXTRACT(YEAR FROM due_date::date)::int WHERE year IS NULL AND due_date IS NOT NULL;
+
+-- Loss reason (mandatory when stage = LOSS)
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS loss_reason TEXT;
+
+-- Audit fields
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS updated_by TEXT;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS won_at TIMESTAMPTZ;
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS loss_at TIMESTAMPTZ;
+
+-- Activity log
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id              SERIAL PRIMARY KEY,
+  action          TEXT        NOT NULL,
+  entity_id       INTEGER,
+  performed_by    TEXT        NOT NULL,
+  performed_by_role TEXT      NOT NULL,
+  details         JSONB,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

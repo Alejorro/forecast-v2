@@ -28,8 +28,7 @@ router.get('/brands/:id/summary', async (req, res) => {
     JOIN sellers s ON s.id = t.seller_id
     WHERE t.brand_id = $1
       AND t.deleted_at IS NULL
-      AND t.due_date IS NOT NULL
-      AND EXTRACT(YEAR FROM t.due_date::date)::int = $2
+      AND t.year = $2
   `, [brand_id, year]);
 
   const qFc  = { q1: 0, q2: 0, q3: 0, q4: 0 };
@@ -104,8 +103,7 @@ router.get('/sellers/summary', async (req, res) => {
            t.allocation_q1, t.allocation_q2, t.allocation_q3, t.allocation_q4
     FROM transactions t
     WHERE t.deleted_at IS NULL
-      AND t.due_date IS NOT NULL
-      AND EXTRACT(YEAR FROM t.due_date::date)::int = $1
+      AND t.year = $1
   `, [year]);
 
   const agg = {};

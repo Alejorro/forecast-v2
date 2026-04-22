@@ -115,3 +115,13 @@ export function updatePlan(brand_id, data) {
     body: JSON.stringify(data),
   })
 }
+
+// --- Activity log ---
+export function getActivity(params = {}) {
+  const qs = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') qs.set(k, v)
+  })
+  const query = qs.toString()
+  return request(`/api/activity${query ? `?${query}` : ''}`)
+}

@@ -57,12 +57,12 @@ const EMPTY_FORM = {
   tcv: '',
   stage_label: 'Identified',
   quarter: '',
-  due_date: '',
   description: '',
   invoice_number: '',
   notes: '',
   highlight_color: '',
   transaction_type: '',
+  loss_reason: '',
 }
 
 function buildFormFromTransaction(tx) {
@@ -80,12 +80,12 @@ function buildFormFromTransaction(tx) {
     tcv:                      tx.tcv != null ? String(tx.tcv) : '',
     stage_label:              tx.stage_label || 'Identified',
     quarter,
-    due_date:                 tx.due_date ? tx.due_date.substring(0, 10) : '',
     description:              tx.description || '',
     invoice_number:           tx.invoice_number || '',
     notes:                    tx.notes || '',
     highlight_color:          tx.highlight_color || '',
     transaction_type:         tx.transaction_type || '',
+    loss_reason:              tx.loss_reason || '',
   }
 }
 
@@ -120,7 +120,7 @@ const inputClass =
   'w-full border border-[#E2E8F0] rounded-md px-3 py-2 text-sm text-[#0F172A] bg-white focus:outline-none focus:ring-2 focus:ring-[#2563EB] focus:border-transparent placeholder-[#94A3B8]'
 
 export default function TransactionDrawer({ transaction, onClose, onSaved }) {
-  const { brands, sellers } = useAppContext()
+  const { brands, sellers, year } = useAppContext()
   const { user } = useAuth()
   const isEdit = Boolean(transaction)
   const isSeller = user?.role === 'seller'
@@ -273,11 +273,13 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     if (!form.brand_id) errs.brand_id = t.drawer.validation.required
     if (!form.seller_id) errs.seller_id = t.drawer.validation.required
     if (!isEdit && !form.transaction_type) errs.transaction_type = t.drawer.validation.required
+    if (isLossStage && !form.loss_reason.trim()) {
+      errs.loss_reason = 'Requerido al marcar como LOSS'
+    }
     if (!isLossStage) {
       if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0)
         errs.tcv = t.drawer.validation.invalidAmount
       if (!form.quarter) errs.quarter = t.drawer.validation.required
-      if (!form.due_date) errs.due_date = t.drawer.validation.required
       if (isQ1Q4Mode) {
         const allZero = ['q1', 'q2', 'q3', 'q4'].every((k) => !(parseFloat(customAmounts[k]) > 0))
         if (allZero) {
@@ -297,10 +299,10 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
     if (!form.seller_id) return false
     if (!form.stage_label) return false
     if (!isEdit && !form.transaction_type) return false
+    if (isLossStage && !form.loss_reason.trim()) return false
     if (!isLossStage) {
       if (!form.tcv || isNaN(parseFloat(form.tcv)) || parseFloat(form.tcv) < 0) return false
       if (!form.quarter) return false
-      if (!form.due_date) return false
       if (isQ1Q4Mode) {
         const allZero = ['q1', 'q2', 'q3', 'q4'].every((k) => !(parseFloat(customAmounts[k]) > 0))
         if (allZero) return false
@@ -331,7 +333,8 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
         brand_opportunity_number: form.brand_opportunity_number || null,
         tcv:                      isLossStage ? (parseFloat(form.tcv) || 0) : parseFloat(form.tcv),
         stage_label:              form.stage_label,
-        due_date:                 form.due_date || null,
+        year:                     isEdit ? transaction.year : year,
+        loss_reason:              isLossStage ? (form.loss_reason || null) : null,
         description:              form.description || null,
         invoice_number:           form.invoice_number || null,
         notes:                    form.notes || null,
@@ -520,38 +523,27 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
           {/* ── Financial fields ───────────────────────────── */}
           <div className="border-t border-[#E2E8F0] pt-5 space-y-5">
 
-            {/* TCV / Due Date */}
-            <div className="grid grid-cols-2 gap-3">
-              <Field label={t.drawer.fields.tcv} required error={errors.tcv}>
-                <div className="relative">
-                  <span className="absolute inset-y-0 left-3 flex items-center text-sm text-[#94A3B8] pointer-events-none">
-                    $
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    className={`${inputClass} pl-6`}
-                    placeholder="0"
-                    value={tcvDisplayValue}
-                    onFocus={() => setTcvFocused(true)}
-                    onBlur={() => setTcvFocused(false)}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/,/g, '')
-                      set('tcv', raw)
-                    }}
-                  />
-                </div>
-              </Field>
-
-              <Field label={t.drawer.fields.dueDate} required error={errors.due_date}>
+            {/* TCV */}
+            <Field label={t.drawer.fields.tcv} required error={errors.tcv}>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-3 flex items-center text-sm text-[#94A3B8] pointer-events-none">
+                  $
+                </span>
                 <input
-                  type="date"
-                  className={inputClass}
-                  value={form.due_date}
-                  onChange={(e) => set('due_date', e.target.value)}
+                  type="text"
+                  inputMode="numeric"
+                  className={`${inputClass} pl-6`}
+                  placeholder="0"
+                  value={tcvDisplayValue}
+                  onFocus={() => setTcvFocused(true)}
+                  onBlur={() => setTcvFocused(false)}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/,/g, '')
+                    set('tcv', raw)
+                  }}
                 />
-              </Field>
-            </div>
+              </div>
+            </Field>
 
             {/* Stage / Quarter */}
             <div className="grid grid-cols-2 gap-3">
@@ -580,6 +572,20 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
                 </select>
               </Field>
             </div>
+
+            {/* Loss reason */}
+            {isLossStage && (
+              <Field label="Motivo de LOSS" required error={errors.loss_reason}>
+                <textarea
+                  rows={3}
+                  className={`${inputClass} resize-none`}
+                  placeholder="Explicá por qué se perdió esta oportunidad..."
+                  value={form.loss_reason}
+                  onChange={(e) => set('loss_reason', e.target.value)}
+                  autoFocus={false}
+                />
+              </Field>
+            )}
 
             {/* Q1-Q4 custom distribution */}
             {isQ1Q4Mode && !isLossStage && (
@@ -749,6 +755,37 @@ export default function TransactionDrawer({ transaction, onClose, onSaved }) {
             </Field>
 
           </div>
+
+          {/* ── Audit info (edit only) ─────────────────────── */}
+          {isEdit && transaction.loss_reason && (
+            <div className="border-t border-[#E2E8F0] pt-4">
+              <p className="text-xs font-medium text-[#64748B] mb-1">Motivo de LOSS</p>
+              <p className="text-sm text-slate-700 bg-red-50 border border-red-100 rounded-md px-3 py-2">{transaction.loss_reason}</p>
+            </div>
+          )}
+
+          {isEdit && (transaction.updated_by || transaction.won_at || transaction.loss_at) && (
+            <div className="border-t border-[#E2E8F0] pt-4 space-y-1">
+              {transaction.updated_by && (
+                <p className="text-xs text-[#94A3B8]">
+                  Modificado por <span className="font-medium text-[#64748B]">{transaction.updated_by}</span>
+                  {transaction.updated_at && (
+                    <> el {new Date(transaction.updated_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</>
+                  )}
+                </p>
+              )}
+              {transaction.won_at && (
+                <p className="text-xs text-green-600">
+                  Ganada el {new Date(transaction.won_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+              {transaction.loss_at && (
+                <p className="text-xs text-red-400">
+                  Marcada como perdida el {new Date(transaction.loss_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

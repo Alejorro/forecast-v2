@@ -176,7 +176,7 @@ function SortableTH({ col, label, sortState, onSort, className }) {
 export default function TransactionsPage() {
   const { year, brands, sellers } = useAppContext()
   const { user } = useAuth()
-  const canWrite = user?.role === 'admin' || user?.role === 'seller'
+  const canWrite = user?.role === 'admin' || user?.role === 'manager' || user?.role === 'seller'
 
   const [search, setSearch] = useState('')
   const [brandFilter, setBrandFilter] = useState('')

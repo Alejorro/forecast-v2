@@ -12,7 +12,7 @@ async function forecastForBrandYear(brand_id, year) {
            allocation_q1, allocation_q2, allocation_q3, allocation_q4
     FROM transactions
     WHERE brand_id = $1
-      AND EXTRACT(YEAR FROM due_date::date)::int = $2
+      AND year = $2
       AND deleted_at IS NULL
       AND stage_label != 'LOSS'
   `, [brand_id, year]);

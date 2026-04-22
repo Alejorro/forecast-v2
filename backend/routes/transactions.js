@@ -9,6 +9,7 @@ import {
   STAGE_MAP,
 } from '../lib/forecast.js';
 import { requireAdmin, requireWrite } from '../middleware/auth.js';
+import { logActivity } from '../lib/activity.js';
 
 const router = Router();
 
@@ -21,11 +22,7 @@ function buildListQuery(params) {
   const { year, brand_id, seller_id, stage_label, quarter, include_loss, search, transaction_type } = params;
 
   if (year) {
-    if (include_loss === 'true') {
-      conditions.push(`(t.due_date IS NULL OR EXTRACT(YEAR FROM t.due_date::date)::int = $${bindings.length + 1})`);
-    } else {
-      conditions.push(`EXTRACT(YEAR FROM t.due_date::date)::int = $${bindings.length + 1}`);
-    }
+    conditions.push(`t.year = $${bindings.length + 1}`);
     bindings.push(Number(year));
   }
 
@@ -171,14 +168,17 @@ router.post('/', requireWrite, async (req, res) => {
   const stageErr = validateStageLabel(body.stage_label);
   if (stageErr) return res.status(400).json({ error: stageErr });
 
-  const dueDateErr = validateDueDate(body.due_date);
-  if (dueDateErr) return res.status(400).json({ error: dueDateErr });
+  if (isLossRow && !body.loss_reason?.trim()) {
+    return res.status(400).json({ error: 'loss_reason is required when stage is LOSS' });
+  }
 
   const highlightColor = validateHighlightColor(body.highlight_color);
   if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
 
   const transactionType = validateTransactionType(body.transaction_type);
   if (transactionType === false) return res.status(400).json({ error: 'Invalid transaction_type' });
+
+  const txYear = Number(body.year) || new Date().getFullYear();
 
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
@@ -187,14 +187,16 @@ router.post('/', requireWrite, async (req, res) => {
       INSERT INTO transactions (
         client_name, project_name, seller_id, brand_id,
         sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
-        due_date, stage_label, status_label, tcv,
+        year, stage_label, status_label, tcv,
         allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-        description, invoice_number, notes, highlight_color, transaction_type
+        description, invoice_number, notes, highlight_color, transaction_type,
+        loss_reason, updated_by, loss_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, 'LOSS', 'LOSS', $10,
         0, 0, 0, 0,
-        $11, $12, $13, $14, $15
+        $11, $12, $13, $14, $15,
+        $16, $17, NOW()
       ) RETURNING id
     `, [
       body.client_name,
@@ -205,17 +207,21 @@ router.post('/', requireWrite, async (req, res) => {
       body.vendor_name              ?? null,
       body.opportunity_odoo         ?? null,
       body.brand_opportunity_number ?? null,
-      body.due_date                 ?? null,
+      txYear,
       tcv,
       body.description              ?? null,
       body.invoice_number           ?? null,
       body.notes                    ?? null,
       highlightColor,
       transactionType,
+      body.loss_reason.trim(),
+      req.user?.sellerName ?? req.user?.username ?? 'Admin',
     ]);
 
     const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
-    return res.status(201).json(deriveTransaction(created[0]));
+    const tx = deriveTransaction(created[0]);
+    logActivity(pool, { action: 'create', entityId: tx.id, user: req.user, details: { client_name: tx.client_name, brand_name: tx.brand_name, stage_label: tx.stage_label, tcv: tx.tcv } });
+    return res.status(201).json(tx);
   }
 
   if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
@@ -236,14 +242,16 @@ router.post('/', requireWrite, async (req, res) => {
     INSERT INTO transactions (
       client_name, project_name, seller_id, brand_id,
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
-      due_date, stage_label, tcv,
+      year, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes, highlight_color, transaction_type
+      description, invoice_number, notes, highlight_color, transaction_type,
+      updated_by, won_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19, $20
+      $16, $17, $18, $19, $20,
+      $21, CASE WHEN $10 = 'Won' THEN NOW() ELSE NULL END
     ) RETURNING id
   `, [
     body.client_name,
@@ -254,7 +262,7 @@ router.post('/', requireWrite, async (req, res) => {
     body.vendor_name              ?? null,
     body.opportunity_odoo         ?? null,
     body.brand_opportunity_number ?? null,
-    body.due_date                 ?? null,
+    txYear,
     body.stage_label,
     Number(body.tcv),
     Number(allocation_q1),
@@ -266,17 +274,20 @@ router.post('/', requireWrite, async (req, res) => {
     body.notes                    ?? null,
     highlightColor,
     transactionType,
+    req.user?.sellerName ?? req.user?.username ?? 'Admin',
   ]);
 
   const { rows: created } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
-  res.status(201).json(deriveTransaction(created[0]));
+  const tx = deriveTransaction(created[0]);
+  logActivity(pool, { action: 'create', entityId: tx.id, user: req.user, details: { client_name: tx.client_name, brand_name: tx.brand_name, stage_label: tx.stage_label, tcv: tx.tcv } });
+  res.status(201).json(tx);
 });
 
 // PUT /api/transactions/:id — admin or seller (own only)
 router.put('/:id', requireWrite, async (req, res) => {
   const id = Number(req.params.id);
   const { rows: existing } = await pool.query(
-    'SELECT id, seller_id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+    'SELECT id, seller_id, stage_label, won_at, loss_at FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
   );
   if (!existing[0]) return res.status(404).json({ error: 'Transaction not found' });
 
@@ -294,8 +305,9 @@ router.put('/:id', requireWrite, async (req, res) => {
   const stageErr = validateStageLabel(body.stage_label);
   if (stageErr) return res.status(400).json({ error: stageErr });
 
-  const dueDateErr = validateDueDate(body.due_date);
-  if (dueDateErr) return res.status(400).json({ error: dueDateErr });
+  if (isLossRow && !body.loss_reason?.trim()) {
+    return res.status(400).json({ error: 'loss_reason is required when stage is LOSS' });
+  }
 
   const highlightColor = validateHighlightColor(body.highlight_color);
   if (highlightColor === false) return res.status(400).json({ error: 'Invalid highlight_color' });
@@ -305,6 +317,7 @@ router.put('/:id', requireWrite, async (req, res) => {
 
   if (isLossRow) {
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
+    const lossAt = existing[0].stage_label === 'LOSS' ? existing[0].loss_at : new Date().toISOString();
 
     await pool.query(`
       UPDATE transactions SET
@@ -316,21 +329,24 @@ router.put('/:id', requireWrite, async (req, res) => {
         vendor_name              = $6,
         opportunity_odoo         = $7,
         brand_opportunity_number = $8,
-        due_date                 = $9,
         stage_label              = 'LOSS',
         status_label             = 'LOSS',
-        tcv                      = $10,
+        tcv                      = $9,
         allocation_q1            = 0,
         allocation_q2            = 0,
         allocation_q3            = 0,
         allocation_q4            = 0,
-        description              = $11,
-        invoice_number           = $12,
-        notes                    = $13,
-        highlight_color          = $14,
-        transaction_type         = $15,
+        description              = $10,
+        invoice_number           = $11,
+        notes                    = $12,
+        highlight_color          = $13,
+        transaction_type         = $14,
+        loss_reason              = $15,
+        updated_by               = $16,
+        won_at                   = NULL,
+        loss_at                  = $17,
         updated_at               = NOW()
-      WHERE id = $16
+      WHERE id = $18
     `, [
       body.client_name,
       body.project_name             ?? null,
@@ -340,18 +356,22 @@ router.put('/:id', requireWrite, async (req, res) => {
       body.vendor_name              ?? null,
       body.opportunity_odoo         ?? null,
       body.brand_opportunity_number ?? null,
-      body.due_date                 ?? null,
       tcv,
       body.description              ?? null,
       body.invoice_number           ?? null,
       body.notes                    ?? null,
       highlightColor,
       transactionType,
+      body.loss_reason.trim(),
+      req.user?.sellerName ?? req.user?.username ?? 'Admin',
+      lossAt,
       id,
     ]);
 
     const { rows: updated } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [id]);
-    return res.json(deriveTransaction(updated[0]));
+    const tx = deriveTransaction(updated[0]);
+    logActivity(pool, { action: 'edit', entityId: tx.id, user: req.user, details: { client_name: tx.client_name, brand_name: tx.brand_name, stage_label: tx.stage_label, tcv: tx.tcv, prev_stage: existing[0].stage_label } });
+    return res.json(tx);
   }
 
   if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
@@ -368,6 +388,12 @@ router.put('/:id', requireWrite, async (req, res) => {
     }
   }
 
+  const oldStage = existing[0].stage_label;
+  const newStage = body.stage_label;
+  const wonAt = newStage === 'Won'
+    ? (oldStage === 'Won' ? existing[0].won_at : new Date().toISOString())
+    : null;
+
   await pool.query(`
     UPDATE transactions SET
       client_name              = $1,
@@ -378,20 +404,23 @@ router.put('/:id', requireWrite, async (req, res) => {
       vendor_name              = $6,
       opportunity_odoo         = $7,
       brand_opportunity_number = $8,
-      due_date                 = $9,
-      stage_label              = $10,
-      tcv                      = $11,
-      allocation_q1            = $12,
-      allocation_q2            = $13,
-      allocation_q3            = $14,
-      allocation_q4            = $15,
-      description              = $16,
-      invoice_number           = $17,
-      notes                    = $18,
-      highlight_color          = $19,
-      transaction_type         = $20,
+      stage_label              = $9,
+      tcv                      = $10,
+      allocation_q1            = $11,
+      allocation_q2            = $12,
+      allocation_q3            = $13,
+      allocation_q4            = $14,
+      description              = $15,
+      invoice_number           = $16,
+      notes                    = $17,
+      highlight_color          = $18,
+      transaction_type         = $19,
+      loss_reason              = NULL,
+      updated_by               = $20,
+      won_at                   = $21,
+      loss_at                  = NULL,
       updated_at               = NOW()
-    WHERE id = $21
+    WHERE id = $22
   `, [
     body.client_name,
     body.project_name             ?? null,
@@ -401,7 +430,6 @@ router.put('/:id', requireWrite, async (req, res) => {
     body.vendor_name              ?? null,
     body.opportunity_odoo         ?? null,
     body.brand_opportunity_number ?? null,
-    body.due_date                 ?? null,
     body.stage_label,
     Number(body.tcv),
     Number(allocation_q1),
@@ -413,24 +441,29 @@ router.put('/:id', requireWrite, async (req, res) => {
     body.notes                    ?? null,
     highlightColor,
     transactionType,
+    req.user?.sellerName ?? req.user?.username ?? 'Admin',
+    wonAt,
     id,
   ]);
 
   const { rows: updated } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [id]);
-  res.json(deriveTransaction(updated[0]));
+  const txUpdated = deriveTransaction(updated[0]);
+  logActivity(pool, { action: 'edit', entityId: txUpdated.id, user: req.user, details: { client_name: txUpdated.client_name, brand_name: txUpdated.brand_name, stage_label: txUpdated.stage_label, tcv: txUpdated.tcv, prev_stage: oldStage } });
+  res.json(txUpdated);
 });
 
 // DELETE /api/transactions/:id — soft delete, admin only
 router.delete('/:id', requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
   const { rows: existing } = await pool.query(
-    'SELECT id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
+    'SELECT id, client_name, stage_label, tcv, brand_id FROM transactions WHERE id = $1 AND deleted_at IS NULL', [id]
   );
   if (!existing[0]) return res.status(404).json({ error: 'Transaction not found' });
 
   await pool.query(
     'UPDATE transactions SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1', [id]
   );
+  logActivity(pool, { action: 'delete', entityId: id, user: req.user, details: { client_name: existing[0].client_name, stage_label: existing[0].stage_label, tcv: existing[0].tcv } });
   res.json({ ok: true });
 });
 
@@ -453,12 +486,16 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
       due_date, stage_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-      description, invoice_number, notes, highlight_color, transaction_type
+      description, invoice_number, notes, highlight_color, transaction_type,
+      updated_by, won_at, loss_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19, $20
+      $16, $17, $18, $19, $20,
+      $21,
+      CASE WHEN $10 = 'Won' THEN NOW() ELSE NULL END,
+      CASE WHEN $10 = 'LOSS' THEN NOW() ELSE NULL END
     ) RETURNING id
   `, [
     original.client_name,
@@ -481,10 +518,13 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     original.notes,
     original.highlight_color     ?? null,
     original.transaction_type    ?? null,
+    req.user?.sellerName ?? req.user?.username ?? 'Admin',
   ]);
 
   const { rows: cloned } = await pool.query(`${TX_SELECT} WHERE t.id = $1`, [inserted[0].id]);
-  res.status(201).json(deriveTransaction(cloned[0]));
+  const txCloned = deriveTransaction(cloned[0]);
+  logActivity(pool, { action: 'duplicate', entityId: txCloned.id, user: req.user, details: { client_name: txCloned.client_name, brand_name: txCloned.brand_name, stage_label: txCloned.stage_label, tcv: txCloned.tcv, source_id: id } });
+  res.status(201).json(txCloned);
 });
 
 export default router;

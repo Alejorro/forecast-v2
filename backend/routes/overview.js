@@ -14,8 +14,7 @@ router.get('/', async (req, res) => {
     JOIN brands  b ON b.id = t.brand_id
     JOIN sellers s ON s.id = t.seller_id
     WHERE t.deleted_at IS NULL
-      AND t.due_date IS NOT NULL
-      AND EXTRACT(YEAR FROM t.due_date::date)::int = $1
+      AND t.year = $1
   `, [year]);
 
   const { rows: plans }  = await pool.query('SELECT * FROM plans WHERE year = $1', [year]);

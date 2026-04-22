@@ -26,9 +26,10 @@ router.post('/login', async (req, res) => {
     sellerId = rows[0]?.id ?? null;
   }
 
-  req.session.user = { role: user.role, sellerName: user.sellerName, sellerId };
+  req.session.user = { username: user.username, role: user.role, sellerName: user.sellerName, sellerId };
 
   res.json({
+    username:   user.username,
     role:       user.role,
     sellerName: user.sellerName ?? null,
     sellerId:   sellerId,
@@ -49,6 +50,7 @@ router.get('/me', (req, res) => {
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
 
   res.json({
+    username:   user.username  ?? null,
     role:       user.role,
     sellerName: user.sellerName ?? null,
     sellerId:   user.sellerId  ?? null,

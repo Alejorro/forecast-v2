@@ -10,9 +10,13 @@ import ImportPage from './pages/ImportPage'
 import BrandsPage from './pages/BrandsPage'
 import SellersPage from './pages/SellersPage'
 import PerformancePage from './pages/PerformancePage'
+import ActivityPage from './pages/ActivityPage'
 
 function AppContent() {
-  const [currentPage, setCurrentPage] = useState('transactions')
+  const { user } = useAuth()
+  const [currentPage, setCurrentPage] = useState(
+    user?.role === 'seller' ? 'performance' : 'transactions'
+  )
 
   function renderPage() {
     switch (currentPage) {
@@ -30,6 +34,8 @@ function AppContent() {
         return <ImportPage />
       case 'performance':
         return <PerformancePage />
+      case 'activity':
+        return <ActivityPage />
       default:
         return <TransactionsPage />
     }

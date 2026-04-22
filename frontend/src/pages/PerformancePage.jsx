@@ -52,7 +52,7 @@ function Section({ title, children }) {
 export default function PerformancePage() {
   const { year, sellers } = useAppContext()
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.role === 'admin' || user?.role === 'manager'
 
   const [sellerFilter, setSellerFilter] = useState('')
   const [data, setData] = useState(null)
@@ -60,6 +60,11 @@ export default function PerformancePage() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    if (isAdmin && !sellerFilter) {
+      setData(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError(null)
     const params = { year }
@@ -90,6 +95,14 @@ export default function PerformancePage() {
         )}
       </div>
 
+      {isAdmin && !sellerFilter && (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <div className="text-4xl mb-4">👤</div>
+          <p className="text-slate-600 font-medium text-base">Seleccioná un vendedor para ver su performance</p>
+          <p className="text-slate-400 text-sm mt-1">Usá el selector de arriba para elegir un vendedor</p>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-4 py-3">
           {error}
@@ -97,7 +110,7 @@ export default function PerformancePage() {
       )}
 
       {/* Summary cards */}
-      {loading ? (
+      {(!isAdmin || sellerFilter) && (loading ? (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="bg-white border border-[#E2E8F0] rounded-lg px-5 py-4">
@@ -115,7 +128,7 @@ export default function PerformancePage() {
           <SummaryCard label="Win Rate" value={`${s.win_rate}%`} color={s.win_rate >= 50 ? 'success' : 'warning'} />
           <SummaryCard label="Perdidas" value={s.loss_count} sub={formatK(s.loss_tcv)} color="danger" />
         </div>
-      ) : null}
+      ) : null)}
 
       {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

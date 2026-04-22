@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
   let sellerId;
   if (user.role === 'seller') {
     sellerId = user.sellerId;
-  } else if (user.role === 'admin') {
+  } else if (user.role === 'admin' || user.role === 'manager') {
     sellerId = req.query.seller_id ? Number(req.query.seller_id) : null;
   } else {
     return res.status(403).json({ error: 'Access denied' });
@@ -30,8 +30,6 @@ router.get('/', async (req, res) => {
     });
   }
 
-  const yearCondition = `EXTRACT(YEAR FROM t.due_date::date)::int = $2`;
-
   // All transactions for this seller+year (including LOSS)
   const { rows: allRows } = await pool.query(`
     SELECT t.*, b.name AS brand_name, s.name AS seller_name
@@ -40,7 +38,7 @@ router.get('/', async (req, res) => {
     JOIN sellers s ON s.id = t.seller_id
     WHERE t.deleted_at IS NULL
       AND t.seller_id = $1
-      AND (t.due_date IS NULL OR ${yearCondition})
+      AND t.year = $2
   `, [sellerId, year]);
 
   const derived = allRows.map(deriveTransaction);

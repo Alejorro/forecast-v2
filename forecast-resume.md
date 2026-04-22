@@ -125,17 +125,15 @@ Auto-balance rule (UX): if the sum is less than TCV by ≤ $999, the system auto
 ### Forecast scope
 
 All forecast calculations are **scope-dependent**. Scope is defined by:
-- Year (derived from `due_date`)
+- Year (stored as `year` INTEGER column on the transaction)
 - Brand
 - Quarter (when used in per-quarter context)
 
 An in-scope transaction must:
-1. Match the requested year (via `year(due_date)`)
+1. Match the requested year (via `t.year = $N`)
 2. Match the requested brand
 3. Contribute to the requested quarter (allocation > 0 for that quarter)
 4. Have `deleted_at = null` (not soft-deleted)
-
-**Transactions without a `due_date` are excluded from plan-vs-gap calculations.**
 
 ### Quarter forecast definitions
 
@@ -221,9 +219,11 @@ Null handling:
 | vendor_name | Optional text, no business logic |
 | opportunity_odoo | Optional reference |
 | brand_opportunity_number | Optional reference |
-| due_date | Date; year is derived from this field |
-| stage_label | One of the 5 valid values; required |
-| status_label | `LOSS` or null |
+| due_date | Legacy date field. No longer used for year scoping. May be null. |
+| year | INTEGER; fiscal year of the transaction. Set from global year selector on creation. Not editable after creation. |
+| stage_label | One of: `Identified`, `Proposal 25`, `Proposal 50`, `Proposal 75`, `Won`, `LOSS`; required |
+| status_label | `LOSS` or null. Legacy field; stage_label=LOSS is the authoritative LOSS indicator. |
+| loss_reason | TEXT, nullable. Required (enforced by backend and UI) when `stage_label = 'LOSS'`. |
 | tcv | USD value; required |
 | allocation_q1 | 0–1; sum with others must equal 1.0 |
 | allocation_q2 | 0–1 |
@@ -237,6 +237,9 @@ Null handling:
 | created_at | Timestamp |
 | updated_at | Timestamp |
 | deleted_at | Nullable; soft delete marker |
+| updated_by | TEXT, nullable; name of the user who last edited (sellerName or 'Admin') |
+| won_at | TIMESTAMPTZ, nullable; set when stage first changes to 'Won', cleared if stage changes away |
+| loss_at | TIMESTAMPTZ, nullable; set when stage first changes to 'LOSS', cleared if stage changes away |
 
 **Critical modeling rules:**
 - Do NOT store `stage_percent`.
@@ -292,13 +295,15 @@ Null handling:
 - A **global year selector** appears in the top navigation and scopes all screens simultaneously, without page reload.
 
 ### Navigation
-The app has six screens accessible via top navigation:
-- **Overview** (default landing)
+The app has seven screens accessible via top navigation:
+- **Overview** (default landing for admin/manager)
 - **Transactions** (primary operational screen)
 - **Plans** (target management)
 - **Brands** (brand-level analysis)
-- **Sellers** (seller-level analysis)
-- **Import / Audit** (data ingestion)
+- **Sellers** (seller-level analysis; hidden from sellers)
+- **Actividad** (activity log; admin and manager only)
+- **Import / Audit** (data ingestion; admin only)
+- **Performance** (seller-facing; landing page for sellers)
 
 ### Key behavioral rules
 - Forms always open as right-side drawers. Users never navigate away from the list context.
@@ -463,8 +468,10 @@ Allocation sum must equal 1.0 (±0.001 tolerance). Rows where all quarter values
 - A zero plan means "target is zero" — gap = 0 − forecast (which may be negative).
 
 ### Transaction year
-- Year is derived from `year(due_date)`.
-- Transactions without a `due_date` are excluded from plan-vs-gap calculations.
+- Year is stored as a dedicated `year` INTEGER column on the transaction.
+- On creation: `year` is taken from the global year selector in the UI (not from a date field).
+- `due_date` is retained in the schema for legacy data but is no longer used for any year-scoping logic.
+- All backend routes filter by `t.year = $N` directly.
 
 ### Import idempotency
 - Standard import upserts plans and appends transactions (does not deduplicate).
@@ -503,13 +510,11 @@ No schema changes or new tables are required. The system already supports multip
 To start a new year:
 1. Go to **Plans** and enter the targets for the new year per brand.
 2. Switch the global year selector to the new year.
-3. New transactions with `due_date` in the new year appear automatically in the new year scope.
+3. New transactions created while the selector is on the new year will have `year = YYYY` automatically.
 
 Prior year data remains intact and accessible by switching the year selector back.
 
 The only manual step required in code: update the `YEAR` constant in `backend/scripts/import-datadot.js` if the Excel import script is used for the new year.
-
-With Odoo integration active, year scoping is automatic — transactions use `due_date` derived from `crm.lead.date_deadline`, so 2027 opportunities appear in 2027 scope without any intervention.
 
 ---
 
@@ -558,6 +563,13 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Role-based access control: 14 seller accounts + admin. Sellers see/edit only own transactions. Backend enforced on all routes. Guest login removed.
 - [x] `PUT /transactions/:id` opened to sellers (own only). Previously admin-only.
 - [x] `GET /api/performance` endpoint — seller performance summary (backend/routes/performance.js)
+- [x] `year` INTEGER column on transactions — replaces `EXTRACT(YEAR FROM due_date)` across all routes; idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in `schema.sql`
+- [x] `loss_reason` TEXT column on transactions — required by backend when `stage_label = 'LOSS'`
+- [x] `updated_by`, `won_at`, `loss_at` audit columns on transactions — set/cleared on stage changes
+- [x] `activity_logs` table — `(id, action, entity_id, performed_by, performed_by_role, details JSONB, created_at)`
+- [x] `GET /api/activity` endpoint — filtered log, admin/manager only (`backend/routes/activity.js`)
+- [x] `backend/lib/activity.js` — `logActivity()` helper, fire-and-forget (not awaited)
+- [x] Manager role (`Alejorro`) — full access identical to admin; `requireAdmin` and `requireWrite` both accept 'manager'
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`
@@ -569,6 +581,14 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Seller UI restrictions: Plans/Sellers nav hidden, seller filter hidden in transactions, seller field locked in drawer
 - [x] Performance page (`frontend/src/pages/PerformancePage.jsx`) — summary cards, stage bar chart, by-brand table, top open transactions
 - [x] Guest login removed from UI
+- [x] Sellers land on Performance page on login (not Overview/Transactions)
+- [x] UserBadge redesigned — circular avatar with initial, role label, violet for manager
+- [x] Performance page: empty state when admin/manager hasn't selected a seller
+- [x] `loss_reason` mandatory textarea in drawer when `stage_label = LOSS`
+- [x] `due_date` field removed from drawer; `year` derived from global year selector
+- [x] Audit info shown in drawer (updated_by, won_at, loss_at) when editing
+- [x] Activity page (`frontend/src/pages/ActivityPage.jsx`) — action log table with filters by user and action type
+- [x] `getActivity()` added to `frontend/src/utils/api.js`
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -589,9 +609,9 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 ### Siguientes pasos (mejoras identificadas)
 
 **Alta prioridad:**
-- [ ] Página de inicio para sellers — redirigir a Performance en vez de Transacciones al loguearse
-- [ ] Indicador visual del vendedor logueado — más prominente en el nav (hoy es texto chico)
-- [ ] "Sin datos" en Performance cuando admin no eligió vendedor — reemplazar cards vacías por mensaje "Seleccioná un vendedor para ver su performance"
+- [x] Página de inicio para sellers — redirigir a Performance en vez de Transacciones al loguearse
+- [x] Indicador visual del vendedor logueado — avatar circular con inicial, nombre en negrita, etiqueta "Vendedor"
+- [x] "Sin datos" en Performance cuando admin no eligió vendedor — mensaje centrado, sin cards ni llamadas a la API
 
 **Media prioridad:**
 - [ ] Filtro de trimestre en Performance — hoy solo filtra por año
@@ -599,7 +619,9 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [ ] Notificación de transacciones próximas a vencer — badge o sección "vencen esta semana"
 
 **Mayor esfuerzo:**
-- [ ] Historial de cambios por transacción — quién editó qué y cuándo (ya existe `updated_at`, falta registrar `updated_by`)
+- [x] Auditoría por transacción — `updated_by`, `won_at`, `loss_at`. Visible en el drawer al editar. Columnas agregadas via `schema.sql` (idempotent).
+- [x] Log de actividad — tabla `activity_logs`, endpoint `/api/activity`, página Actividad en frontend (admin/manager)
+- [x] LOSS reason obligatorio — campo `loss_reason` en DB, validación en backend, textarea en drawer
 - [ ] Vista de pipeline tipo kanban — columnas por etapa, drag & drop para cambiar stage
 - [ ] Comparación entre vendedores — gráfico de barras en Performance (admin) con todos juntos
 
@@ -729,12 +751,15 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | GET | `/overview` | open | Year-level forecast summary. Query: `?year=YYYY` |
 | GET | `/brands/:id/summary` | open | Brand-level summary |
 | GET | `/sellers/summary` | open | Seller contribution summary |
-| GET | `/performance` | admin, seller | Seller performance data. Query: `?year=YYYY&seller_id=N`. Sellers always see own data. |
+| GET | `/performance` | admin, manager, seller | Seller performance data. Query: `?year=YYYY&seller_id=N`. Sellers always see own data. |
+| GET | `/activity` | admin, manager | Activity log. Query: `?performed_by=X&action=Y&limit=N` (max 500, default 300). Returns actions ordered by `created_at DESC`. |
 
 ### Auth model summary
 - **Admin:** full access to all routes and all data
-- **Seller:** read/write own transactions only + access to Performance. Cannot delete, cannot access Plans or Sellers module.
+- **Manager:** full access identical to admin — create/edit/delete transactions, modify plans, see all modules including Sellers, Activity log, and Performance. Import tab is not shown in nav.
+- **Seller:** read/write own transactions only + access to Performance. Cannot delete, cannot access Plans, Sellers, or Activity modules.
 - Authentication: session cookie (`dot4.sid`), 8-hour expiry
+- All roles return `username` in session and login/me responses.
 
 ---
 
@@ -746,6 +771,7 @@ Implemented as simple session-based auth. No JWT, no OAuth, no external provider
 | Role | How to access | Permissions |
 |---|---|---|
 | admin | username: `admin`, password: `alejocapo` | Full access to all data and modules |
+| manager | username: `Alejorro`, password: `alejorro97` | Full access identical to admin (create/edit/delete transactions, modify plans, see all modules). Import tab not shown in nav. |
 | seller | username/password per table below | Own transactions only. Can read/write/edit but not delete. Cannot access Plans or Sellers modules. |
 
 ### Seller accounts

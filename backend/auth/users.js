@@ -3,6 +3,7 @@
 
 const USERS = [
   { username: 'admin',     password: 'alejocapo',     role: 'admin' },
+  { username: 'Alejorro',  password: 'alejorro97',    role: 'manager' },
   { username: 'Alejandro', password: 'alejandro3847', role: 'seller', sellerName: 'Alejandro Simeone' },
   { username: 'Brian',     password: 'brian7293',     role: 'seller', sellerName: 'Brian Zino' },
   { username: 'CarlosF',   password: 'carlosf5621',   role: 'seller', sellerName: 'Carlos Furnkorn' },
@@ -25,5 +26,5 @@ export function findUser(username, password) {
       && u.password === password
   );
   if (!match) return null;
-  return { role: match.role, sellerName: match.sellerName ?? null };
+  return { username: match.username, role: match.role, sellerName: match.sellerName ?? null };
 }

@@ -1,6 +1,6 @@
 /**
  * Auth middleware for DOT4 Forecast V2.
- * Roles: admin | seller | guest
+ * Roles: admin | manager | seller
  */
 
 // Attach session user to req.user on every request.
@@ -9,19 +9,19 @@ export function attachUser(req, _res, next) {
   next();
 }
 
-// Require admin role.
+// Require admin or manager role.
 export function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
+  const role = req.user?.role;
+  if (role !== 'admin' && role !== 'manager') {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
 }
 
-// Require admin or seller (blocks guests and unauthenticated requests).
-// Use this to guard write operations that sellers are also allowed to perform.
+// Require admin, manager, or seller.
 export function requireWrite(req, res, next) {
   const role = req.user?.role;
-  if (role !== 'admin' && role !== 'seller') {
+  if (role !== 'admin' && role !== 'manager' && role !== 'seller') {
     return res.status(403).json({ error: 'Write access not allowed' });
   }
   next();

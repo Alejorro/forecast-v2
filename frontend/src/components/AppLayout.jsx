@@ -8,18 +8,39 @@ const NAV_ITEMS = [
   { id: 'transactions', label: t.nav.transactions },
   { id: 'plans',        label: t.nav.plans,    sellerHidden: true },
   { id: 'brands',       label: t.nav.brands },
-  { id: 'sellers',      label: t.nav.sellers,  hidden: true },
+  { id: 'sellers',      label: t.nav.sellers,  sellerHidden: true },
   { id: 'performance',  label: 'Performance' },
+  { id: 'activity',     label: 'Actividad',    sellerHidden: true },
   { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
 ]
 
 function UserBadge({ user, onLogout }) {
   const isSeller = user.role === 'seller'
-  const name = isSeller ? user.sellerName : 'Admin'
+  const isManager = user.role === 'manager'
+  const name = isSeller ? user.sellerName : (user.username || 'Admin')
+
+  const avatarClass = isSeller
+    ? 'bg-blue-100 text-blue-700'
+    : isManager
+    ? 'bg-violet-100 text-violet-700'
+    : 'bg-slate-200 text-slate-600'
 
   return (
-    <div className="flex items-center gap-2 flex-shrink-0">
-      <span className="text-xs text-[#64748B] font-medium">{name}</span>
+    <div className="flex items-center gap-2.5 flex-shrink-0">
+      <div className="flex items-center gap-2">
+        <div className={['w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold', avatarClass].join(' ')}>
+          {name.charAt(0).toUpperCase()}
+        </div>
+        <div className="flex flex-col leading-none">
+          <span className="text-sm font-semibold text-[#0F172A]">{name}</span>
+          {isSeller && (
+            <span className="text-[10px] text-[#64748B] font-medium uppercase tracking-wide">Vendedor</span>
+          )}
+          {isManager && (
+            <span className="text-[10px] text-[#64748B] font-medium uppercase tracking-wide">Manager</span>
+          )}
+        </div>
+      </div>
       <button
         onClick={onLogout}
         className="text-xs text-[#94A3B8] hover:text-[#64748B] px-2 py-1 rounded hover:bg-slate-100 transition-colors"
