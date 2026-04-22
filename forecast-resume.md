@@ -595,7 +595,8 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Delete button hidden from sellers in transaction drawer
 - [x] "Cerrar sesiones" button in nav — **manager only**; calls `/api/auth/invalidate-all`
 - [x] Session-expired detection — any mid-session 401 triggers redirect to login with amber notice: "Tu sesión fue cerrada por el administrador."
-- [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Requires env vars: `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_PASSWORD`.
+- [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Env vars `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` set in Railway. All 14 active sellers mapped to `odoo_user_id`. Live in production as of 2026-04-22.
+- [x] CORS fix: added `PATCH` to allowed methods (required for `PATCH /api/ventas/:id`)
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -608,9 +609,6 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ### What is pending
 
-- [ ] Ventas: set `odoo_user_id` on existing sellers (direct DB or future admin UI) for full Odoo→seller mapping
-- [ ] Ventas: populate `fx_rates` table with historical rates before running sync (via `POST /api/ventas/fx-rates`)
-- [ ] Ventas: configure `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_PASSWORD` env vars in Railway
 - [ ] Excel import endpoint (UI-triggered via API, not just CLI script)
 - [ ] `api.dot4sa.com.ar` DNS full propagation + SSL activation (Railway custom domain)
 - [ ] Run `highlight_color` DB migration against Railway production: `DATABASE_URL=<railway-url> node backend/scripts/migrate-add-highlight-color.js`
