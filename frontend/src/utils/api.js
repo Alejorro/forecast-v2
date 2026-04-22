@@ -6,6 +6,10 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   })
+  if (res.status === 401 && path !== '/api/auth/login' && path !== '/api/auth/me') {
+    window.dispatchEvent(new CustomEvent('session-expired'))
+    throw new Error('session-expired')
+  }
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`API error ${res.status}: ${text}`)

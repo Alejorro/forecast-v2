@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, sessionMessage, clearSessionMessage } = useAuth()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -13,6 +13,7 @@ export default function LoginPage() {
     if (!username.trim() || !password) return
     setLoading(true)
     setError('')
+    clearSessionMessage()
     try {
       await login(username.trim(), password)
     } catch {
@@ -41,6 +42,11 @@ export default function LoginPage() {
         {/* Card */}
         <div className="bg-white border border-[#E2E8F0] rounded-xl shadow-sm px-8 py-8">
           <form onSubmit={handleLogin} className="space-y-4">
+            {sessionMessage && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-md px-3 py-2">
+                {sessionMessage}
+              </div>
+            )}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-md px-3 py-2">
                 {error}
