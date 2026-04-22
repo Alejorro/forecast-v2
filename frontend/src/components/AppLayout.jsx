@@ -42,7 +42,7 @@ function UserBadge({ user, onLogout, onInvalidateAll }) {
           )}
         </div>
       </div>
-      {(user.role === 'admin' || user.role === 'manager') && (
+      {user.role === 'manager' && (
         <button
           onClick={onInvalidateAll}
           className="text-xs text-amber-500 hover:text-amber-700 px-2 py-1 rounded hover:bg-amber-50 transition-colors"
