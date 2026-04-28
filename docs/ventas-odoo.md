@@ -46,6 +46,7 @@ ODOO_URL=https://odoo.dot4sa.com
 ODOO_DB=dot4-prod
 ODOO_USER=alejo.palladino@dot4sa.com
 ODOO_PASSWORD=...
+ODOO_COMPANY_ID=1
 ```
 
 **Client** (`backend/lib/odoo-client.js`):
@@ -104,6 +105,10 @@ Ventas list, KPIs, seller options, and brand options use only active rows by def
 - `date_order` → `sale_date`, `quarter`, `year`
 - `currency_id` → `currency_original`
 - `amount_total` → `amount_original`
+
+**Domain:**
+- `state IN ('draft', 'sent', 'sale', 'done')`
+- `company_id = ODOO_COMPANY_ID` (defaults to `1`, DOT4 SA)
 
 **Important field discoveries (from inspect script run 2026-04-22):**
 - Brand comes from `brand_id` (custom field), NOT `team_id` (which is always "Sales")

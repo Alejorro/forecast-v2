@@ -554,7 +554,7 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ## 14. Implementation State
 
-> Last updated: 2026-04-27
+> Last updated: 2026-04-28
 
 ### What is built
 
@@ -604,6 +604,11 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Ventas sync: paginated, no fixed 2000-record limit
 - [x] Ventas `fx_rate_date_used` now stores the actual rate lookup date (not always `sale_date`)
 - [x] Ventas seller fallback mapping uses compacted name normalization (removes non-alphanumeric)
+- [x] `users` table in PostgreSQL — replaces hardcoded `auth/users.js`; seeded on `initDb()` with `ON CONFLICT DO NOTHING`; roles: `admin | manager | seller`
+- [x] `findUser()` in `auth/users.js` is now async and queries the `users` table
+- [x] `requireManager` middleware — accepts only `role === 'manager'`; stricter than `requireAdmin`
+- [x] `GET/POST/PUT/DELETE /api/users` — full user CRUD; manager only; cannot delete own account
+- [x] Ventas filter: `brand=__no_brand__` returns sales where `brand IS NULL`
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`
@@ -629,12 +634,17 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Env vars `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` set in Railway. All 14 active sellers mapped to `odoo_user_id`. Live in production as of 2026-04-22.
 - [x] Ventas stale handling: `sales_odoo.is_active/stale_at`; sync marks orders not returned by Odoo as stale instead of deleting them; Ventas views filter active rows by default.
 - [x] Ventas autosync: enabled by default in production, runs on startup and then hourly unless overridden by `VENTAS_AUTO_SYNC_*` env vars.
+- [x] Ventas company filter: Odoo sync filters `sale.order.company_id = ODOO_COMPANY_ID` (default `1`, DOT4 SA) to avoid mixing Aluna S.A. orders into DOT4 Forecast.
 - [x] CORS fix: added `PATCH` to allowed methods (required for `PATCH /api/ventas/:id`)
 - [x] Plans page: gap = `plan − forecast` with correct colors (positive gap red, negative gap green)
 - [x] Plans page: editable by manager role (consistent with backend `requireAdmin` accepting manager)
 - [x] Transactions table: LOSS row detection uses `stage_label`, not `status_label`
 - [x] Overview: clicking a row in Top Opportunities opens the edit drawer
 - [x] `.gitignore` updated: added `.DS_Store` and `frontend/dist`
+- [x] Ventas: all columns sortable (client-side); sort icon on each header
+- [x] Ventas: "Sin brand" option in brand filter — fetches `brand IS NULL` from backend
+- [x] Nav redesigned by role: Ventas visible to admin+manager; Plans/Sellers/Activity/Usuarios manager-only (moved right of separator)
+- [x] Users page (`frontend/src/pages/UsersPage.jsx`) — table of all users, create/edit drawer, delete with confirm; password visibility toggle (eye icon); cannot change own role; manager only
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -800,6 +810,14 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | GET | `/activity` | manager only | Activity log. Query: `?performed_by=X&action=Y&limit=N` (max 500, default 300). Returns actions ordered by `created_at DESC`. |
 | POST | `/auth/invalidate-all` | manager only | Bump session version — forces all active sessions to re-login on next request. |
 
+### Users
+| Method | Route | Access | Description |
+|---|---|---|---|
+| GET    | `/users` | manager only | List all users (no passwords). Returns `{ username, role, seller_name }[]` |
+| POST   | `/users` | manager only | Create user. Body: `{ username, password, role, seller_name? }` |
+| PUT    | `/users/:username` | manager only | Update role, password (optional), seller_name. Cannot be empty update. |
+| DELETE | `/users/:username` | manager only | Delete user. Cannot delete own account. |
+
 ### Ventas (Odoo Sales)
 | Method | Route | Access | Description |
 |---|---|---|---|
@@ -812,9 +830,9 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | POST | `/ventas/fx-rates` | admin, manager | Upsert a FX rate. Body: `{ rate_date, currency, rate }`. `rate` follows Odoo convention: 1 ARS = rate [currency]. `currency` ∈ `USD_OFFICIAL`, `BLUE`, `MEP` |
 
 ### Auth model summary
-- **Admin:** full access to all routes and all data
-- **Manager:** full access identical to admin — create/edit/delete transactions, modify plans, see all modules including Sellers, Activity log, and Performance. Import tab is not shown in nav.
-- **Seller:** read/write own transactions only + access to Performance. Cannot delete, cannot access Plans, Sellers, or Activity modules.
+- **Manager (Alejorro):** full access to everything — transactions, plans, sellers, ventas, activity, user management. Only role that can access Plans, Sellers, Activity, and Usuarios tabs.
+- **Admin (Brian, Claudio, JC, Mariano):** full access to transactions + ventas. Cannot access Plans, Sellers, Activity, or Usuarios tabs.
+- **Seller:** read/write own transactions only + Performance page. No access to any management screens.
 - Authentication: session cookie (`dot4.sid`), 8-hour expiry
 - All roles return `username` in session and login/me responses.
 
@@ -825,40 +843,41 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 Implemented as simple session-based auth. No JWT, no OAuth, no external providers.
 
 ### Roles
-| Role | How to access | Permissions |
+| Role | Nav access | Backend access |
 |---|---|---|
-| admin | username: `admin`, password: `alejocapo` | Full access to all data and modules |
-| manager | username: `Alejorro`, password: `alejorro97` | Full access identical to admin (create/edit/delete transactions, modify plans, see all modules). Import tab not shown in nav. |
-| seller | username/password per table below | Own transactions only. Can read/write/edit but not delete. Cannot access Plans or Sellers modules. |
+| manager | Everything (Overview, Transactions, Brands, Performance, Ventas, Plans, Sellers, Activity, Usuarios) | All routes |
+| admin | Overview, Transactions, Brands, Performance, Ventas | All routes except manager-only (Activity, Users CRUD) |
+| seller | Performance only | Own transactions only |
 
-### Admin accounts (non-superadmin)
-| Username | Password | Seller (DB) |
+> **Users are stored in the `users` PostgreSQL table** (not hardcoded). Managed via the Usuarios page (manager only). Seeded from `schema.sql` on first deploy.
+
+### Default accounts (as seeded)
+| Username | Role | Seller vinculado |
 |---|---|---|
-| Brian | brian7293 | Brian Zino |
-| Claudio | claudio6382 | Claudio Guerra |
-| JC | jc4728 | Juan Carlos Romitelli |
-| Mariano | mariano3651 | Mariano Basso |
+| Alejorro | manager | — |
+| admin | admin | — |
+| Brian | admin | Brian Zino |
+| Claudio | admin | Claudio Guerra |
+| JC | admin | Juan Carlos Romitelli |
+| Mariano | admin | Mariano Basso |
+| Alejandro | seller | Alejandro Simeone |
+| CarlosF | seller | Carlos Furnkorn |
+| CarlosL | seller | Carlos Lopez |
+| Christian | seller | Christian Braun |
+| Fabio | seller | Fabio Villamayor |
+| Florencia | seller | Florencia Vargas |
+| Mathias | seller | Mathias Villamayor |
+| Milton | seller | Milton Gallo |
+| Oscar | seller | Oscar Ontano |
+| Sandra | seller | Sandra Tedesco |
 
-### Seller accounts
-| Username | Password | Seller (DB) |
-|---|---|---|
-| Alejandro | alejandro3847 | Alejandro Simeone |
-| CarlosF | carlosf5621 | Carlos Furnkorn |
-| CarlosL | carlosl8274 | Carlos Lopez |
-| Christian | christian4519 | Christian Braun |
-| Fabio | fabio2947 | Fabio Villamayor |
-| Florencia | florencia8163 | Florencia Vargas |
-| Mathias | mathias9274 | Mathias Villamayor |
-| Milton | milton5839 | Milton Gallo |
-| Oscar | oscar7162 | Oscar Ontano |
-| Sandra | sandra4803 | Sandra Tedesco |
-
-Login is case-insensitive for username. Guest login has been removed.
+Login is case-insensitive for username.
 
 ### Key files
-- `backend/auth/users.js` — hardcoded user registry and `findUser()`. Returns `{ role, sellerName }`.
-- `backend/middleware/auth.js` — `attachUser`, `requireAdmin`, `requireWrite`
-- `backend/routes/auth.js` — login, logout, me endpoints. On login: looks up `seller_id` from DB for any user with a `sellerName` (sellers and admin-sellers alike) and stores it in session.
+- `backend/auth/users.js` — async `findUser(username, password)` — queries `users` table
+- `backend/middleware/auth.js` — `attachUser`, `requireAuth`, `requireAdmin`, `requireWrite`, `requireManager`
+- `backend/routes/users.js` — full user CRUD (manager only)
+- `backend/routes/auth.js` — login, logout, me. On login: looks up `seller_id` from DB for any user with `seller_name`.
 
 ### Seller identity enforcement
 The session stores `sellerId` (the DB `id` from the `sellers` table). On every restricted operation:

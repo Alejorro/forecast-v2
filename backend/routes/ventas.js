@@ -115,7 +115,11 @@ async function findSellerId(db, odooUserId, sellerNameRaw) {
 }
 
 async function fetchAllSaleOrders(odoo) {
-  const domain = [['state', 'in', ['draft', 'sent', 'sale', 'done']]];
+  const companyId = Number(process.env.ODOO_COMPANY_ID || 1);
+  const domain = [
+    ['state', 'in', ['draft', 'sent', 'sale', 'done']],
+    ['company_id', '=', companyId],
+  ];
   const fields = [
     'id', 'name', 'partner_id', 'user_id', 'brand_id', 'invoice_status',
     'state', 'date_order', 'currency_id', 'amount_total',
