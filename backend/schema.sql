@@ -122,3 +122,8 @@ CREATE TABLE IF NOT EXISTS sales_odoo (
   internal_tags       TEXT,
   highlight_color     TEXT
 );
+
+-- Active/stale tracking for Odoo sales sync. Rows are never deleted; orders not
+-- seen in the latest successful sync are hidden from operational Ventas views.
+ALTER TABLE sales_odoo ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE sales_odoo ADD COLUMN IF NOT EXISTS stale_at TIMESTAMPTZ;

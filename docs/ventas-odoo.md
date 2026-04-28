@@ -55,7 +55,7 @@ ODOO_PASSWORD=...
 
 ---
 
-## Sync Logic (`POST /api/ventas/sync`)
+## Sync Logic (`POST /api/ventas/sync` + autosync)
 
 Two steps, same pattern as PriceChecker (`sync_odoo.py`):
 
@@ -77,6 +77,22 @@ Example values:
 ### Step 2 — Fetch sale orders
 Filter: `state IN ('draft', 'sent', 'sale', 'done')`. Fetches all matching rows using paginated `search_read` batches.
 This includes confirmed orders (invoiced + to invoice) **and quotations** (draft/sent).
+
+Automatic sync is supported by backend env vars:
+
+```text
+VENTAS_AUTO_SYNC_ENABLED=true|false
+VENTAS_AUTO_SYNC_INTERVAL_MS=3600000
+VENTAS_AUTO_SYNC_ON_START=true|false
+```
+
+In production, autosync defaults to enabled, runs once shortly after startup, and repeats every hour unless overridden.
+
+### Stale handling
+
+The sync never deletes `sales_odoo` rows. Each successful sync marks rows seen in Odoo as `is_active = true` and clears `stale_at`. Existing rows not returned by the current Odoo query are marked `is_active = false` with `stale_at = sync time`.
+
+Ventas list, KPIs, seller options, and brand options use only active rows by default. `include_stale=true` can be used for debugging historical/stale rows.
 
 **Fields fetched from `sale.order`:**
 - `id`, `name` → `odoo_sale_order_id`, `reference`
@@ -183,6 +199,8 @@ Sellers without match (logged as warnings): `FACTURACION` (uid=43) — generic b
 | `provider` | Editable |
 | `internal_tags` | Editable |
 | `highlight_color` | Editable — `green/yellow/orange/red` |
+| `is_active` | `true` if the order was returned by the latest successful sync |
+| `stale_at` | Timestamp when a previously synced order stopped appearing in Odoo's active query |
 
 ### `fx_rates`
 Populated automatically by sync. Column is `rate` (1 ARS = rate [currency]).

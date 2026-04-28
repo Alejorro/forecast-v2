@@ -13,7 +13,7 @@ import summaryRouter      from './routes/summary.js';
 import authRouter         from './routes/auth.js';
 import performanceRouter  from './routes/performance.js';
 import activityRouter     from './routes/activity.js';
-import ventasRouter       from './routes/ventas.js';
+import ventasRouter, { startVentasAutoSync } from './routes/ventas.js';
 
 import { attachUser, requireAdmin, requireAuth } from './middleware/auth.js';
 
@@ -110,6 +110,7 @@ initDb()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`Forecast V2 backend running on http://localhost:${PORT}`);
+      startVentasAutoSync();
     });
   })
   .catch(err => {

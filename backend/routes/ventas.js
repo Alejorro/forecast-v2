@@ -133,8 +133,8 @@ async function fetchAllSaleOrders(odoo) {
 }
 
 function buildWhereClause(query) {
-  const { year, quarter, brand, seller_id, invoice_status, search } = query;
-  const conditions = [];
+  const { year, quarter, brand, seller_id, invoice_status, search, include_stale } = query;
+  const conditions = include_stale === 'true' ? [] : ['so.is_active = TRUE'];
   const bindings = [];
 
   if (year) {
@@ -147,7 +147,7 @@ function buildWhereClause(query) {
   }
   if (brand) {
     if (brand === '__no_brand__') {
-      conditions.push('so.brand IS NULL');
+      conditions.push("NULLIF(TRIM(COALESCE(so.brand, '')), '') IS NULL");
     } else {
       conditions.push(`so.brand = $${bindings.length + 1}`);
       bindings.push(brand);
@@ -213,6 +213,7 @@ router.get('/sellers', async (_req, res) => {
       FROM sales_odoo so
       JOIN sellers s ON so.seller_id = s.id
       WHERE so.seller_id IS NOT NULL
+        AND so.is_active = TRUE
       ORDER BY s.name
     `);
     res.json(result.rows);
@@ -228,7 +229,9 @@ router.get('/brands', async (_req, res) => {
   try {
     const result = await pool.query(`
       SELECT DISTINCT brand FROM sales_odoo
-      WHERE brand IS NOT NULL ORDER BY brand
+      WHERE brand IS NOT NULL
+        AND is_active = TRUE
+      ORDER BY brand
     `);
     res.json(result.rows.map(r => r.brand));
   } catch (err) {
@@ -272,83 +275,135 @@ router.post('/fx-rates', requireAdmin, async (req, res) => {
 
 // ─── Odoo Sync ────────────────────────────────────────────────────────────────
 
-router.post('/sync', requireAdmin, async (_req, res) => {
+export async function syncVentasFromOdoo() {
   const syncAt = new Date();
   const warnings = [];
   let upserted = 0;
   let failed = 0;
 
-  try {
-    const odoo = createOdooClient();
+  const odoo = createOdooClient();
 
-    // Step 1: sync currency rates from Odoo (same as PriceChecker)
-    const ratesCount = await syncCurrencyRates(odoo);
-    console.log(`[ventas sync] currency rates upserted: ${ratesCount}`);
+  // Step 1: sync currency rates from Odoo (same as PriceChecker)
+  const ratesCount = await syncCurrencyRates(odoo);
+  console.log(`[ventas sync] currency rates upserted: ${ratesCount}`);
 
-    // Step 2: fetch sale orders (invoiced + to invoice + quotations draft/sent)
-    const orders = await fetchAllSaleOrders(odoo);
+  // Step 2: fetch sale orders (invoiced + to invoice + quotations draft/sent)
+  const orders = await fetchAllSaleOrders(odoo);
+  const fetchedIds = orders.map(order => order.id).filter(Boolean);
 
-    for (const order of orders) {
-      try {
-        const saleDate = order.date_order ? order.date_order.split(' ')[0] : null;
-        const quarter = getQuarter(saleDate);
-        const year = saleDate ? new Date(saleDate).getFullYear() : null;
+  for (const order of orders) {
+    try {
+      const saleDate = order.date_order ? order.date_order.split(' ')[0] : null;
+      const quarter = getQuarter(saleDate);
+      const year = saleDate ? new Date(saleDate).getFullYear() : null;
 
-        const odooUserId    = Array.isArray(order.user_id)    ? order.user_id[0]    : null;
-        const sellerNameRaw = Array.isArray(order.user_id)    ? order.user_id[1]    : null;
-        const clientName    = Array.isArray(order.partner_id) ? order.partner_id[1] : null;
-        const brand         = Array.isArray(order.brand_id)   ? order.brand_id[1]   : null;
-        const currencyName  = Array.isArray(order.currency_id)? order.currency_id[1]: null;
+      const odooUserId    = Array.isArray(order.user_id)    ? order.user_id[0]    : null;
+      const sellerNameRaw = Array.isArray(order.user_id)    ? order.user_id[1]    : null;
+      const clientName    = Array.isArray(order.partner_id) ? order.partner_id[1] : null;
+      const brand         = Array.isArray(order.brand_id)   ? order.brand_id[1]   : null;
+      const currencyName  = Array.isArray(order.currency_id)? order.currency_id[1]: null;
 
-        const sellerId = await findSellerId(pool, odooUserId, sellerNameRaw);
-        if (!sellerId && sellerNameRaw) {
-          warnings.push(`No seller match for Odoo user "${sellerNameRaw}" (uid=${odooUserId}), order ${order.name}`);
-        }
-
-        const { usd, rate, rateDate } = await computeUsdOfficial(pool, order.amount_total, currencyName, saleDate);
-        if (usd === null && currencyName) {
-          warnings.push(`Could not compute USD for order ${order.name} (currency: ${currencyName}, date: ${saleDate})`);
-        }
-
-        await pool.query(`
-          INSERT INTO sales_odoo (
-            odoo_sale_order_id, reference, client_name, seller_id, seller_name_raw,
-            brand, invoice_status, order_state, sale_date, quarter, year,
-            currency_original, amount_original, amount_usd_official,
-            fx_rate_used, fx_rate_date_used, last_sync_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-          ON CONFLICT (odoo_sale_order_id) DO UPDATE SET
-            reference           = EXCLUDED.reference,
-            client_name         = EXCLUDED.client_name,
-            seller_id           = EXCLUDED.seller_id,
-            seller_name_raw     = EXCLUDED.seller_name_raw,
-            brand               = EXCLUDED.brand,
-            invoice_status      = EXCLUDED.invoice_status,
-            order_state         = EXCLUDED.order_state,
-            sale_date           = EXCLUDED.sale_date,
-            quarter             = EXCLUDED.quarter,
-            year                = EXCLUDED.year,
-            currency_original   = EXCLUDED.currency_original,
-            amount_original     = EXCLUDED.amount_original,
-            amount_usd_official = EXCLUDED.amount_usd_official,
-            fx_rate_used        = EXCLUDED.fx_rate_used,
-            fx_rate_date_used   = EXCLUDED.fx_rate_date_used,
-            last_sync_at        = EXCLUDED.last_sync_at
-        `, [
-          order.id, order.name, clientName, sellerId, sellerNameRaw,
-          brand, order.invoice_status, order.state, saleDate, quarter, year,
-          currencyName, order.amount_total, usd,
-          rate, rateDate, syncAt,
-        ]);
-
-        upserted++;
-      } catch (orderErr) {
-        failed++;
-        warnings.push(`Error on order ${order.id || '?'}: ${orderErr.message}`);
+      const sellerId = await findSellerId(pool, odooUserId, sellerNameRaw);
+      if (!sellerId && sellerNameRaw) {
+        warnings.push(`No seller match for Odoo user "${sellerNameRaw}" (uid=${odooUserId}), order ${order.name}`);
       }
-    }
 
-    res.json({ ok: true, fetched: orders.length, upserted, failed, warnings });
+      const { usd, rate, rateDate } = await computeUsdOfficial(pool, order.amount_total, currencyName, saleDate);
+      if (usd === null && currencyName) {
+        warnings.push(`Could not compute USD for order ${order.name} (currency: ${currencyName}, date: ${saleDate})`);
+      }
+
+      await pool.query(`
+        INSERT INTO sales_odoo (
+          odoo_sale_order_id, reference, client_name, seller_id, seller_name_raw,
+          brand, invoice_status, order_state, sale_date, quarter, year,
+          currency_original, amount_original, amount_usd_official,
+          fx_rate_used, fx_rate_date_used, last_sync_at, is_active, stale_at
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,TRUE,NULL)
+        ON CONFLICT (odoo_sale_order_id) DO UPDATE SET
+          reference           = EXCLUDED.reference,
+          client_name         = EXCLUDED.client_name,
+          seller_id           = EXCLUDED.seller_id,
+          seller_name_raw     = EXCLUDED.seller_name_raw,
+          brand               = EXCLUDED.brand,
+          invoice_status      = EXCLUDED.invoice_status,
+          order_state         = EXCLUDED.order_state,
+          sale_date           = EXCLUDED.sale_date,
+          quarter             = EXCLUDED.quarter,
+          year                = EXCLUDED.year,
+          currency_original   = EXCLUDED.currency_original,
+          amount_original     = EXCLUDED.amount_original,
+          amount_usd_official = EXCLUDED.amount_usd_official,
+          fx_rate_used        = EXCLUDED.fx_rate_used,
+          fx_rate_date_used   = EXCLUDED.fx_rate_date_used,
+          last_sync_at        = EXCLUDED.last_sync_at,
+          is_active           = TRUE,
+          stale_at            = NULL
+      `, [
+        order.id, order.name, clientName, sellerId, sellerNameRaw,
+        brand, order.invoice_status, order.state, saleDate, quarter, year,
+        currencyName, order.amount_total, usd,
+        rate, rateDate, syncAt,
+      ]);
+
+      upserted++;
+    } catch (orderErr) {
+      failed++;
+      warnings.push(`Error on order ${order.id || '?'}: ${orderErr.message}`);
+    }
+  }
+
+  const staleResult = fetchedIds.length > 0
+    ? await pool.query(`
+        UPDATE sales_odoo
+        SET is_active = FALSE,
+            stale_at = $1
+        WHERE is_active = TRUE
+          AND NOT (odoo_sale_order_id = ANY($2::int[]))
+      `, [syncAt, fetchedIds])
+    : { rowCount: 0 };
+
+  return { ok: true, fetched: orders.length, upserted, failed, stale: staleResult.rowCount, warnings };
+}
+
+let ventasAutoSyncRunning = false;
+
+export function startVentasAutoSync() {
+  const enabled = process.env.VENTAS_AUTO_SYNC_ENABLED ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false');
+  if (enabled !== 'true') return;
+
+  const intervalMs = Number(process.env.VENTAS_AUTO_SYNC_INTERVAL_MS) || 60 * 60 * 1000;
+  const runOnStartSetting = process.env.VENTAS_AUTO_SYNC_ON_START ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false');
+  const runOnStart = runOnStartSetting === 'true';
+
+  async function runAutoSync() {
+    if (ventasAutoSyncRunning) {
+      console.log('[ventas autosync] skipped: previous sync still running');
+      return;
+    }
+    ventasAutoSyncRunning = true;
+    try {
+      const result = await syncVentasFromOdoo();
+      console.log(`[ventas autosync] fetched=${result.fetched} upserted=${result.upserted} stale=${result.stale} failed=${result.failed}`);
+      if (result.warnings?.length) {
+        console.warn(`[ventas autosync] warnings=${result.warnings.length}`);
+      }
+    } catch (err) {
+      console.error('[ventas autosync]', err);
+    } finally {
+      ventasAutoSyncRunning = false;
+    }
+  }
+
+  if (runOnStart) setTimeout(runAutoSync, 10_000);
+  setInterval(runAutoSync, intervalMs).unref?.();
+  console.log(`[ventas autosync] enabled every ${Math.round(intervalMs / 60000)} minutes`);
+}
+
+router.post('/sync', requireAdmin, async (_req, res) => {
+  try {
+    const result = await syncVentasFromOdoo();
+    res.json(result);
   } catch (err) {
     console.error('[ventas sync]', err);
     res.status(500).json({ error: err.message });

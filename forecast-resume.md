@@ -627,6 +627,8 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] "Cerrar sesiones" button in nav — **manager only**; calls `/api/auth/invalidate-all`
 - [x] Session-expired detection — any mid-session 401 triggers redirect to login with amber notice: "Tu sesión fue cerrada por el administrador."
 - [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Env vars `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` set in Railway. All 14 active sellers mapped to `odoo_user_id`. Live in production as of 2026-04-22.
+- [x] Ventas stale handling: `sales_odoo.is_active/stale_at`; sync marks orders not returned by Odoo as stale instead of deleting them; Ventas views filter active rows by default.
+- [x] Ventas autosync: enabled by default in production, runs on startup and then hourly unless overridden by `VENTAS_AUTO_SYNC_*` env vars.
 - [x] CORS fix: added `PATCH` to allowed methods (required for `PATCH /api/ventas/:id`)
 - [x] Plans page: gap = `plan − forecast` with correct colors (positive gap red, negative gap green)
 - [x] Plans page: editable by manager role (consistent with backend `requireAdmin` accepting manager)
