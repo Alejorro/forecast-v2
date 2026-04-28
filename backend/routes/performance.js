@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { deriveTransaction } from '../lib/forecast.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // GET /api/performance?year=YYYY&seller_id=N
 // Sellers always see their own data. Admins can specify seller_id.

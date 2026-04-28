@@ -27,6 +27,14 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
+// Require an authenticated session.
+export function requireAuth(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  next();
+}
+
 // Require admin, manager, or seller.
 export function requireWrite(req, res, next) {
   const role = req.user?.role;

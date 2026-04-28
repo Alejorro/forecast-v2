@@ -11,8 +11,8 @@
 | # | Riesgo | Estado |
 |---|---|---|
 | 1 | Contraseñas hardcodeadas en `backend/auth/users.js` | Pendiente |
-| 2 | `SESSION_SECRET` con fallback inseguro en código | Pendiente |
-| 3 | Sin rate limiting en `/api/auth/login` | Pendiente |
+| 2 | `SESSION_SECRET` con fallback inseguro en código | Corregido |
+| 3 | Sin rate limiting en `/api/auth/login` | Corregido |
 | 4 | Sin logs de intentos fallidos de login | Pendiente |
 
 ### Media prioridad
@@ -58,7 +58,7 @@ if (!valid) return null
 
 **Problema:** Fallback a string hardcodeado si `SESSION_SECRET` no está definido.
 
-**Solución:** Hacer que el backend falle al arrancar si `SESSION_SECRET` no está en el entorno.
+**Estado:** Implementado. En producción el backend falla al arrancar si `SESSION_SECRET` no está definido. En desarrollo local usa un fallback dev-only.
 ```js
 const secret = process.env.SESSION_SECRET
 if (!secret) throw new Error('SESSION_SECRET env var is required')
@@ -68,15 +68,7 @@ if (!secret) throw new Error('SESSION_SECRET env var is required')
 
 **Problema:** Sin límite de intentos, se puede hacer fuerza bruta.
 
-**Solución:** `express-rate-limit` en la ruta de login.
-```bash
-npm install express-rate-limit
-```
-```js
-import rateLimit from 'express-rate-limit'
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 })
-app.use('/api/auth/login', loginLimiter)
-```
+**Estado:** Implementado con rate limit en memoria: 10 intentos por IP cada 15 minutos en `POST /api/auth/login`.
 
 ### 2.4 Logs de intentos fallidos
 

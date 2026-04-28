@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import pool from '../db.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // GET /api/activity — accessible to manager only
 router.get('/', async (req, res) => {

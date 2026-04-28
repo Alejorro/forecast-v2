@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { STAGE_MAP, deriveTransaction, computeGap } from '../lib/forecast.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // ─── GET /api/brands/:id/summary?year=YYYY ───────────────────────────────────
 router.get('/brands/:id/summary', async (req, res) => {
@@ -112,18 +114,17 @@ router.get('/sellers/summary', async (req, res) => {
     const pct    = STAGE_MAP[tx.stage_label] ?? 0;
     const wt     = tx.tcv * pct;
 
+    if (isLoss) continue;
+
     if (!agg[tx.seller_id]) {
       agg[tx.seller_id] = { deal_count: 0, tcv_total: 0, weighted_forecast: 0, won: 0 };
     }
 
     agg[tx.seller_id].deal_count += 1;
     agg[tx.seller_id].tcv_total  += tx.tcv;
+    agg[tx.seller_id].weighted_forecast += wt;
 
-    if (!isLoss) {
-      agg[tx.seller_id].weighted_forecast += wt;
-    }
-
-    if (tx.stage_label === 'Won' && !isLoss) {
+    if (tx.stage_label === 'Won') {
       agg[tx.seller_id].won += wt;
     }
   }

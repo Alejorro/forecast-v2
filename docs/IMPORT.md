@@ -2,7 +2,7 @@
 
 ## Overview
 
-The import script reads `DATADOT.xlsx` and loads plans and transactions into the SQLite database.
+The import script reads `DATADOT.xlsx` and loads plans and transactions into the PostgreSQL database.
 
 Script location: `backend/scripts/import-datadot.js`
 
@@ -84,7 +84,7 @@ Contains LOSS transactions. Most rows use the same column layout as the main she
 
 Detection: if `r[1]` is one of `1Q`, `2Q`, `3Q`, `4Q`, the shifted layout is used.
 
-LOSS rows always have `odd = 0`. The script assigns `stage_label = Identified` as a required placeholder (LOSS rows are excluded from all forecast calculations).
+LOSS rows always have `odd = 0`. The script assigns `stage_label = LOSS` and `status_label = LOSS`, with zero quarter allocations.
 
 ---
 
@@ -177,7 +177,7 @@ A row is **imported with a warning** if:
 - `client_name` is taken as-is from "Cliente - Proyecto" (no splitting)
 - `project_name` is always `null` (not split from client column)
 - `due_date` does not exist in the Excel; it is derived from the Quarter column
-- LOSS rows have `odd = 0`; they receive `stage_label = Identified` as a schema-required placeholder
+- LOSS rows have `odd = 0`; they receive `stage_label = LOSS` and `status_label = LOSS`
 - LOSS rows receive `allocation_q1..q4 = 0` (excluded from all calculations via `status_label = LOSS`)
 - Sellers and brands are created on demand if they don't already exist in the DB
 

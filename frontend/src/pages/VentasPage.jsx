@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAppContext } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import { getVentas, syncVentas, getVentasSellers, getVentasBrands } from '../utils/api'
@@ -74,6 +74,23 @@ function IconSearch() {
   )
 }
 
+function SortIcon({ col, sortCol, sortDir }) {
+  if (sortCol !== col) return (
+    <svg className="w-3 h-3 text-slate-300 ml-1 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4" />
+    </svg>
+  )
+  return sortDir === 'asc' ? (
+    <svg className="w-3 h-3 text-blue-500 ml-1 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
+    </svg>
+  ) : (
+    <svg className="w-3 h-3 text-blue-500 ml-1 inline shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+    </svg>
+  )
+}
+
 function SyncIcon({ spinning }) {
   return (
     <svg
@@ -114,6 +131,8 @@ export default function VentasPage() {
   const [syncing, setSyncing]       = useState(false)
   const [syncResult, setSyncResult] = useState(null)
   const [drawerSale, setDrawerSale] = useState(null)
+  const [sortCol, setSortCol]       = useState(null)
+  const [sortDir, setSortDir]       = useState('asc')
 
   // Static option lists — loaded once, independent of filters
   const [ventasSellers, setVentasSellers] = useState([])
@@ -169,10 +188,34 @@ export default function VentasPage() {
     setStatusFilter('')
   }
 
+  function toggleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+  }
+
   async function handleDrawerSaved() {
     setDrawerSale(null)
     await fetchSales()
   }
+
+  // ── Sort ──────────────────────────────────────────────────────────────────
+
+  const sortedSales = useMemo(() => {
+    if (!sortCol) return sales
+    return [...sales].sort((a, b) => {
+      let va = sortCol === 'seller_name' ? (a.seller_name || a.seller_name_raw || '') : a[sortCol]
+      let vb = sortCol === 'seller_name' ? (b.seller_name || b.seller_name_raw || '') : b[sortCol]
+      if (va == null && vb == null) return 0
+      if (va == null) return 1
+      if (vb == null) return -1
+      const cmp = typeof va === 'string' ? va.localeCompare(vb, 'es') : va - vb
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [sales, sortCol, sortDir])
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -194,8 +237,22 @@ export default function VentasPage() {
   }
   const brandSummary = Object.values(brandMap).sort((a, b) => (b.facturado + b.porFacturar) - (a.facturado + a.porFacturar))
 
-  const TH = 'px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider'
+  const TH     = 'px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider'
   const TH_SEP = TH + ' border-l border-slate-200'
+  const TH_SORT = 'cursor-pointer hover:text-slate-800 select-none'
+
+  function thProps(col, extra = '') {
+    return {
+      className: `${TH} ${extra} ${TH_SORT}`,
+      onClick: () => toggleSort(col),
+    }
+  }
+  function thPropsSep(col, extra = '') {
+    return {
+      className: `${TH_SEP} ${extra} ${TH_SORT}`,
+      onClick: () => toggleSort(col),
+    }
+  }
 
   return (
     <div>
@@ -283,6 +340,7 @@ export default function VentasPage() {
 
           <FilterSelect value={brandFilter} onChange={setBrandFilter} placeholder={tv.allBrands}>
             {ventasBrands.map(b => <option key={b} value={b}>{b}</option>)}
+            <option value="__no_brand__">Sin brand</option>
           </FilterSelect>
 
           <FilterSelect value={statusFilter} onChange={setStatusFilter} placeholder={tv.allStatuses}>
@@ -359,15 +417,15 @@ export default function VentasPage() {
               </colgroup>
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
-                  <th className={TH + ' text-left'}>{tv.columns.client}</th>
-                  <th className={TH_SEP + ' text-left'}>{tv.columns.brand}</th>
-                  <th className={TH_SEP + ' text-left'}>{tv.columns.seller}</th>
-                  <th className={TH_SEP + ' text-center'}>{tv.columns.invoiceStatus}</th>
-                  <th className={TH_SEP + ' text-right'}>{tv.columns.amountOriginal}</th>
-                  <th className={TH_SEP + ' text-center'}>{tv.columns.currency}</th>
-                  <th className={TH_SEP + ' text-right'}>{tv.columns.amountUsd}</th>
-                  <th className={TH_SEP + ' text-center'}>{tv.columns.date}</th>
-                  <th className={TH_SEP + ' text-left'}>{tv.columns.reference}</th>
+                  <th {...thProps('client_name', 'text-left')}>{tv.columns.client}<SortIcon col="client_name" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('brand', 'text-left')}>{tv.columns.brand}<SortIcon col="brand" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('seller_name', 'text-left')}>{tv.columns.seller}<SortIcon col="seller_name" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('invoice_status', 'text-center')}>{tv.columns.invoiceStatus}<SortIcon col="invoice_status" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('amount_original', 'text-right')}>{tv.columns.amountOriginal}<SortIcon col="amount_original" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('currency_original', 'text-center')}>{tv.columns.currency}<SortIcon col="currency_original" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('amount_usd_official', 'text-right')}>{tv.columns.amountUsd}<SortIcon col="amount_usd_official" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('sale_date', 'text-center')}>{tv.columns.date}<SortIcon col="sale_date" sortCol={sortCol} sortDir={sortDir} /></th>
+                  <th {...thPropsSep('reference', 'text-left')}>{tv.columns.reference}<SortIcon col="reference" sortCol={sortCol} sortDir={sortDir} /></th>
                 </tr>
               </thead>
               <tbody>
@@ -399,7 +457,7 @@ export default function VentasPage() {
                     </td>
                   </tr>
                 ) : (
-                  sales.map((sale, idx) => {
+                  sortedSales.map((sale, idx) => {
                     const isOdd = idx % 2 === 1
                     const hlBg  = sale.highlight_color && HIGHLIGHT_BG[sale.highlight_color]
                     const rowBg = hlBg || (isOdd ? 'bg-slate-50/70' : 'bg-white')

@@ -7,6 +7,7 @@ import { useAppContext } from '../context/AppContext'
 import { getOverview } from '../utils/api'
 import { formatUSD } from '../utils/format'
 import StageBadge from '../components/StageBadge'
+import TransactionDrawer from '../components/TransactionDrawer'
 import t from '../utils/t'
 
 // ─── KPI Card ────────────────────────────────────────────────────────────────
@@ -361,15 +362,25 @@ export default function OverviewPage() {
   const [data, setData]       = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
+  const [editingTransaction, setEditingTransaction] = useState(null)
 
-  useEffect(() => {
+  function fetchOverview() {
     setLoading(true)
     setError(null)
     getOverview(year)
       .then(setData)
       .catch(err => setError(err.message))
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    fetchOverview()
   }, [year])
+
+  async function handleSaved() {
+    setEditingTransaction(null)
+    fetchOverview()
+  }
 
   const gap = data?.total_gap
   const gapColor = gap == null ? 'default' : gap > 0 ? 'danger' : 'success'
@@ -433,9 +444,17 @@ export default function OverviewPage() {
             {[1,2,3,4,5].map(i => <div key={i} className="h-10 bg-slate-50 rounded animate-pulse" />)}
           </div>
         ) : (
-          <TopOpportunitiesTable rows={data?.top_opportunities} />
+          <TopOpportunitiesTable rows={data?.top_opportunities} onEdit={setEditingTransaction} />
         )}
       </Section>
+
+      {editingTransaction && (
+        <TransactionDrawer
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaved={handleSaved}
+        />
+      )}
     </div>
   )
 }

@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import pool from '../db.js';
 import { STAGE_MAP, computeGap } from '../lib/forecast.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

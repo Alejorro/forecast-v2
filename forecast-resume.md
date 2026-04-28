@@ -445,7 +445,7 @@ Allocation sum must equal 1.0 (±0.001 tolerance). Rows where all quarter values
 **Import warning condition:**
 - `weighted_total` from Excel deviates by more than 1% from `TCV × odd` — imported as-is using actual Excel values.
 
-**LOSS rows:** Always have `odd = 0`. The script assigns `stage_label = Identified` as a schema-required placeholder. LOSS rows receive `allocation_q1..q4 = 0` since they are excluded from all calculations.
+**LOSS rows:** Always have `odd = 0`. The script assigns `stage_label = LOSS` and `status_label = LOSS`. LOSS rows receive `allocation_q1..q4 = 0` and are excluded from all calculations.
 
 ---
 
@@ -498,6 +498,7 @@ Allocation sum must equal 1.0 (±0.001 tolerance). Rows where all quarter values
 
 - Single currency: USD. No conversion or multi-currency logic.
 - Simple session-based auth is implemented (see Section 19). No OAuth, JWT, or external identity providers.
+- All business API routes require an authenticated session. `/api/health` and `/api/auth/*` are the only unauthenticated API surfaces.
 - `project_name` is always null. The Excel stores client and project as a combined string; no splitting is implemented.
 - Sellers and brands are created on demand during import if not already present.
 - The import year is hardcoded to 2026 in the import script.
@@ -529,6 +530,21 @@ The only manual step required in code: update the `YEAR` constant in `backend/sc
 ### Project phase
 As of 2026-04-10 the app is live in production. Core backend and frontend are complete. Remaining pending items are in Section 14.
 
+### Production data audit (2026-04-27, SELECT only — no data modified)
+
+**Transactions:**
+- 15 LOSS transactions have `year = NULL` (imported before `year` column existed)
+- 44 LOSS transactions have `loss_reason = NULL` (imported before `loss_reason` was enforced)
+- 8 active (non-LOSS, non-deleted) transactions have `tcv = 0`
+- 0 cases of `status_label = 'LOSS'` on non-LOSS transactions (status_label cleanup working correctly)
+
+**Ventas (sales_odoo):**
+- 957 total records as of last sync (2026-04-22 20:39 UTC)
+- 58 records with `invoice_status IN ('to invoice', 'invoiced')` and `amount_usd_official = 0` (FX rate missing at sync time)
+- 21 records with `seller_id = NULL` (no Odoo user match)
+- 67 records with `brand = NULL` (no brand on the Odoo sale.order)
+- **S01202 is stale:** synced on 2026-04-22 with `amount_original = 0`. As of 2026-04-27 Odoo shows this order at ARS 119.147.650,04 (PES), which normalizes to ~USD 86.621. The DB reflects the April 22 snapshot. Next sync will update it.
+
 ### Deployment
 - The database lives on Railway (PostgreSQL). It is not in the repository.
 - Local dev uses a separate `forecast_dev` PostgreSQL database (see Section 16).
@@ -538,7 +554,7 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 
 ## 14. Implementation State
 
-> Last updated: 2026-04-22
+> Last updated: 2026-04-27
 
 ### What is built
 
@@ -552,6 +568,9 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Validation rules (stage_label, allocations sum, due_date)
 - [x] Excel import script (`backend/scripts/import-datadot.js`)
 - [x] Auth system (`backend/auth/users.js`, `backend/middleware/auth.js`, `backend/routes/auth.js`)
+- [x] Auth required on all business API routes; unauthenticated requests return 401
+- [x] Login rate limit: 10 attempts per IP per 15 minutes
+- [x] Production startup requires `SESSION_SECRET`; dev-only fallback allowed locally
 - [x] `/health` endpoint
 - [x] CORS configured for production (`https://forecast.dot4sa.com.ar`)
 - [x] Session cookies configured for cross-origin production use (`sameSite: none`, `secure: true`)
@@ -573,6 +592,18 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] `POST /api/auth/invalidate-all` — bumps session version, forces all users to re-login; manager only
 - [x] `backend/lib/session-version.js` — session version counter; imported by auth middleware and auth routes (avoids circular dependency)
 - [x] Brian, Claudio, JC, Mariano promoted to `admin` role
+- [x] `include_loss=true` on `GET /transactions` now returns LOSS rows alongside active ones (was returning only LOSS)
+- [x] `status_label` cleared to `NULL` when a LOSS transaction is edited back to an active stage
+- [x] Sellers cannot change `seller_id` when editing their own transactions
+- [x] Strict numeric validation on `tcv` and `allocation_q1–q4` (rejects non-numeric, NaN, infinity)
+- [x] Duplicate endpoint now preserves `year`, `status_label`, `loss_reason`, `won_at`, `loss_at`
+- [x] Excel import: LOSS rows now enter as `stage_label = 'LOSS'` (was `Identified`)
+- [x] Excel import: now writes `year` column on all imported transactions
+- [x] Sellers summary excludes LOSS from `deal_count`, `tcv_total`, and `weighted_forecast`
+- [x] Async wrapper (`backend/lib/async-route.js`) applied to all routers — unhandled promise rejections reach the global error handler
+- [x] Ventas sync: paginated, no fixed 2000-record limit
+- [x] Ventas `fx_rate_date_used` now stores the actual rate lookup date (not always `sale_date`)
+- [x] Ventas seller fallback mapping uses compacted name normalization (removes non-alphanumeric)
 
 **Frontend:**
 - [x] Login screen with `credentials: 'include'`
@@ -597,6 +628,11 @@ As of 2026-04-10 the app is live in production. Core backend and frontend are co
 - [x] Session-expired detection — any mid-session 401 triggers redirect to login with amber notice: "Tu sesión fue cerrada por el administrador."
 - [x] **Ventas module** — `sales_odoo` table, `fx_rates` table, `odoo_user_id` on sellers, `/api/ventas/*` routes, `VentasPage.jsx`, `VentasDrawer.jsx`. Odoo sync via `POST /api/ventas/sync`. Currency normalization at sync time (USD 1:1, ARS/PES via USD_OFFICIAL rate, US$/Blue via BLUE→ARS→USD_OFFICIAL). Env vars `ODOO_URL`, `ODOO_DB`, `ODOO_USER`, `ODOO_PASSWORD` set in Railway. All 14 active sellers mapped to `odoo_user_id`. Live in production as of 2026-04-22.
 - [x] CORS fix: added `PATCH` to allowed methods (required for `PATCH /api/ventas/:id`)
+- [x] Plans page: gap = `plan − forecast` with correct colors (positive gap red, negative gap green)
+- [x] Plans page: editable by manager role (consistent with backend `requireAdmin` accepting manager)
+- [x] Transactions table: LOSS row detection uses `stage_label`, not `status_label`
+- [x] Overview: clicking a row in Top Opportunities opens the edit drawer
+- [x] `.gitignore` updated: added `.DS_Store` and `frontend/dist`
 
 **Deployment (completed 2026-04-08):**
 - [x] App live at `https://forecast.dot4sa.com.ar`
@@ -769,7 +805,7 @@ All routes are prefixed with `/api`. Backend runs on port `3001`.
 | GET | `/ventas/summary` | open | KPI aggregates + brand breakdown. Same filters as list. |
 | GET | `/ventas/:id` | open | Single sale |
 | PATCH | `/ventas/:id` | admin, manager | Update internal fields: `notes`, `provider`, `internal_tags`, `highlight_color` |
-| POST | `/ventas/sync` | admin, manager | Trigger Odoo sync. Fetches `sale.order` where `invoice_status` IN `('to invoice', 'invoiced')`. Returns `{ fetched, upserted, failed, warnings }` |
+| POST | `/ventas/sync` | admin, manager | Trigger Odoo sync. Fetches `sale.order` where `state IN ('draft', 'sent', 'sale', 'done')`, paginated (no fixed limit). Returns `{ fetched, upserted, failed, warnings }` |
 | GET | `/ventas/fx-rates` | admin, manager | List recent FX rates |
 | POST | `/ventas/fx-rates` | admin, manager | Upsert a FX rate. Body: `{ rate_date, currency, rate }`. `rate` follows Odoo convention: 1 ARS = rate [currency]. `currency` ∈ `USD_OFFICIAL`, `BLUE`, `MEP` |
 
@@ -820,7 +856,7 @@ Login is case-insensitive for username. Guest login has been removed.
 ### Key files
 - `backend/auth/users.js` — hardcoded user registry and `findUser()`. Returns `{ role, sellerName }`.
 - `backend/middleware/auth.js` — `attachUser`, `requireAdmin`, `requireWrite`
-- `backend/routes/auth.js` — login, logout, me endpoints. On seller login: looks up `seller_id` from DB and stores it in session.
+- `backend/routes/auth.js` — login, logout, me endpoints. On login: looks up `seller_id` from DB for any user with a `sellerName` (sellers and admin-sellers alike) and stores it in session.
 
 ### Seller identity enforcement
 The session stores `sellerId` (the DB `id` from the `sellers` table). On every restricted operation:

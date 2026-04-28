@@ -32,15 +32,15 @@ function GapCell({ gap }) {
     return <span className="text-slate-300">—</span>
   }
   if (gap >= 0) {
-    return <span className="font-semibold text-green-600">{formatUSD(gap)}</span>
+    return <span className="font-semibold text-red-600">{formatUSD(gap)}</span>
   }
-  return <span className="font-semibold text-red-600">{formatUSD(gap)}</span>
+  return <span className="font-semibold text-green-600">{formatUSD(gap)}</span>
 }
 
 export default function PlansPage() {
   const { year } = useAppContext()
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const canEditPlans = user?.role === 'admin' || user?.role === 'manager'
 
   const [rows, setRows] = useState([])
   const [edits, setEdits] = useState({})
@@ -96,7 +96,7 @@ export default function PlansPage() {
   function computedFYGap(row) {
     const plan = computedFYPlan(row)
     if (plan === null) return null
-    return row.fy_forecast - plan
+    return plan - row.fy_forecast
   }
 
   async function handleSave() {
@@ -129,7 +129,7 @@ export default function PlansPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-xl font-semibold text-slate-900">{t.plans.title}</h1>
-        {isAdmin && (
+        {canEditPlans && (
           <div className="flex items-center gap-3">
             {saveError && (
               <span className="text-sm text-red-500">{saveError}</span>
@@ -230,7 +230,7 @@ export default function PlansPage() {
                             ? edits[row.brand_id][field]
                             : displayValue(row[field])
 
-                          if (!isAdmin) {
+                          if (!canEditPlans) {
                             return (
                               <td key={field} className="border-l border-slate-200 px-3 py-2.5 text-sm text-right tabular-nums text-slate-600">
                                 {row[field] != null ? formatUSD(row[field]) : <span className="text-slate-300">—</span>}
@@ -294,7 +294,7 @@ export default function PlansPage() {
       </div>
 
       {/* Editing hint */}
-      {isAdmin && !loading && rows.length > 0 && (
+      {canEditPlans && !loading && rows.length > 0 && (
         <p className="mt-3 text-xs text-slate-500">
           {t.plans.editHint}
         </p>

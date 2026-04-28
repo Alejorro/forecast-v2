@@ -139,7 +139,7 @@ const STAGE_PERCENT = {
 }
 
 function stagePercent(tx) {
-  return STAGE_PERCENT[tx.status_label === 'LOSS' ? 'LOSS' : tx.stage_label] ?? 0
+  return STAGE_PERCENT[tx.stage_label] ?? 0
 }
 
 const TH_BASE = 'px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center'
@@ -238,7 +238,7 @@ export default function TransactionsPage() {
   function closeDrawer() { setDrawerOpen(false); setEditingTransaction(null) }
   async function handleSaved() { closeDrawer(); await fetchTransactions() }
 
-  const isLoss = (tx) => tx.status_label === 'LOSS'
+  const isLoss = (tx) => tx.stage_label === 'LOSS'
   const isWon  = (tx) => tx.stage_label === 'Won'
 
   function handleSort(col) {

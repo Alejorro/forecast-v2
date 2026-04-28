@@ -2,7 +2,7 @@
  * import-datadot.js
  * ─────────────────────────────────────────────────────────────────────────────
  * Imports plans and transactions from DATADOT.xlsx (sheet "PLAN 2026" + "LOSS")
- * into the forecast-v2 SQLite database.
+ * into the forecast-v2 PostgreSQL database.
  *
  * Usage:
  *   node scripts/import-datadot.js [path/to/DATADOT.xlsx] [--dry-run] [--clear]
@@ -273,7 +273,7 @@ function parsePlanTransactions(rows) {
         opportunity_odoo:         str(r[2]),
         brand_opportunity_number: str(r[3]),
         due_date,
-        stage_label:              'Identified',
+        stage_label:              'LOSS',
         status_label:             'LOSS',
         tcv,
         allocation_q1:            0,
@@ -400,8 +400,8 @@ function parseLossTransactions(rows) {
       continue;
     }
 
-    // LOSS rows always get stage_label = Identified (excluded from forecast calcs)
-    const stage_label  = 'Identified';
+    // LOSS rows use stage_label = LOSS, the authoritative closed-lost marker.
+    const stage_label  = 'LOSS';
     const status_label = 'LOSS';
 
     // Derive due_date from Quarter if layout B has it
@@ -571,27 +571,27 @@ async function main() {
     await client.query('BEGIN');
     for (const tx of allTx) {
       try {
-        const seller_id = await upsertSeller(pool, tx.seller_name);
-        const brand_id  = await upsertBrand(pool, tx.brand_name);
-        await pool.query(`
+        const seller_id = await upsertSeller(client, tx.seller_name);
+        const brand_id  = await upsertBrand(client, tx.brand_name);
+        await client.query(`
           INSERT INTO transactions (
             client_name, project_name, seller_id, brand_id,
             sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
-            due_date, stage_label, status_label, tcv,
+            due_date, year, stage_label, status_label, tcv,
             allocation_q1, allocation_q2, allocation_q3, allocation_q4,
-            notes, invoice_number
+            notes, invoice_number, loss_reason
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8,
-            $9, $10, $11, $12,
-            $13, $14, $15, $16,
-            $17, $18
+            $9, $10, $11, $12, $13,
+            $14, $15, $16, $17,
+            $18, $19, $20
           )
         `, [
           tx.client_name, tx.project_name, seller_id, brand_id,
           tx.sub_brand, tx.vendor_name, tx.opportunity_odoo, tx.brand_opportunity_number,
-          tx.due_date, tx.stage_label, tx.status_label, tx.tcv,
+          tx.due_date, YEAR, tx.stage_label, tx.status_label, tx.tcv,
           tx.allocation_q1, tx.allocation_q2, tx.allocation_q3, tx.allocation_q4,
-          tx.notes, tx.invoice_number,
+          tx.notes, tx.invoice_number, tx.status_label === 'LOSS' ? 'Importado desde hoja LOSS' : null,
         ]);
         txImported++;
       } catch (e) {

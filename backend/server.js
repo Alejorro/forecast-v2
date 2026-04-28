@@ -15,10 +15,15 @@ import performanceRouter  from './routes/performance.js';
 import activityRouter     from './routes/activity.js';
 import ventasRouter       from './routes/ventas.js';
 
-import { attachUser, requireAdmin } from './middleware/auth.js';
+import { attachUser, requireAdmin, requireAuth } from './middleware/auth.js';
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
+const SESSION_SECRET = process.env.SESSION_SECRET;
+
+if (process.env.NODE_ENV === 'production' && !SESSION_SECRET) {
+  throw new Error('SESSION_SECRET env var is required in production');
+}
 
 
 app.set('etag', false);
@@ -43,7 +48,7 @@ app.use(express.json());
 
 app.use(session({
   name:   'dot4.sid',
-  secret: process.env.SESSION_SECRET || 'dot4-forecast-internal-secret',
+  secret: SESSION_SECRET || 'dot4-forecast-dev-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -71,6 +76,8 @@ app.use('/api', (_req, res, next) => {
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 app.use('/api/auth', authRouter);
+
+app.use('/api', requireAuth);
 
 app.use('/api/brands',       brandsRouter);
 app.use('/api/sellers',      sellersRouter);

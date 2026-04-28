@@ -3,15 +3,15 @@ import pool from '../db.js';
 import {
   deriveTransaction,
   validateStageLabel,
-  validateQuarter,
-  validateDueDate,
   quarterToAllocations,
-  STAGE_MAP,
+  validateAllocations,
 } from '../lib/forecast.js';
 import { requireAdmin, requireWrite } from '../middleware/auth.js';
 import { logActivity } from '../lib/activity.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -50,9 +50,7 @@ function buildListQuery(params) {
     else if (q === 'Q1-Q4') conditions.push('t.allocation_q1 > 0 AND t.allocation_q2 > 0 AND t.allocation_q3 > 0 AND t.allocation_q4 > 0');
   }
 
-  if (include_loss === 'true') {
-    conditions.push("t.stage_label = 'LOSS'");
-  } else {
+  if (include_loss !== 'true') {
     conditions.push("t.stage_label != 'LOSS'");
   }
 
@@ -91,7 +89,7 @@ function validateTransactionType(value) {
 function resolveAllocations(body) {
   if (body.quarter) {
     const alloc = quarterToAllocations(body.quarter);
-    if (!alloc) return { error: `Invalid quarter "${body.quarter}". Must be one of: Q1, Q2, Q3, Q4, 1Q-4Q` };
+    if (!alloc) return { error: `Invalid quarter "${body.quarter}". Must be one of: Q1, Q2, Q3, Q4, Q1-Q4` };
     return alloc;
   }
   return {
@@ -107,6 +105,16 @@ function enforceSellerIdentity(user, submittedSellerId) {
   if (!user.sellerId) return 'Seller account not linked. Contact an admin.';
   if (Number(submittedSellerId) !== user.sellerId) {
     return 'You can only create transactions under your own seller identity';
+  }
+  return null;
+}
+
+function validateTcv(value, { allowZero = false } = {}) {
+  if (value === undefined || value === null || value === '') return 'tcv is required';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 'tcv must be a number';
+  if (allowZero ? n < 0 : n <= 0) {
+    return allowZero ? 'tcv must be zero or greater' : 'tcv must be greater than zero';
   }
   return null;
 }
@@ -181,6 +189,8 @@ router.post('/', requireWrite, async (req, res) => {
   const txYear = Number(body.year) || new Date().getFullYear();
 
   if (isLossRow) {
+    const tcvErr = validateTcv(body.tcv ?? 0, { allowZero: true });
+    if (tcvErr) return res.status(400).json({ error: tcvErr });
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
 
     const { rows: inserted } = await pool.query(`
@@ -224,7 +234,8 @@ router.post('/', requireWrite, async (req, res) => {
     return res.status(201).json(tx);
   }
 
-  if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
+  const tcvErr = validateTcv(body.tcv);
+  if (tcvErr) return res.status(400).json({ error: tcvErr });
 
   const allocResult = resolveAllocations(body);
   if (allocResult.error) return res.status(400).json({ error: allocResult.error });
@@ -232,10 +243,8 @@ router.post('/', requireWrite, async (req, res) => {
   const { allocation_q1, allocation_q2, allocation_q3, allocation_q4 } = allocResult;
 
   if (!body.quarter) {
-    const sum = allocation_q1 + allocation_q2 + allocation_q3 + allocation_q4;
-    if (Math.abs(sum - 1.0) > 0.001) {
-      return res.status(400).json({ error: `Allocations must sum to 1.0 (got ${sum.toFixed(4)})` });
-    }
+    const allocErr = validateAllocations(allocation_q1, allocation_q2, allocation_q3, allocation_q4);
+    if (allocErr) return res.status(400).json({ error: allocErr });
   }
 
   const { rows: inserted } = await pool.query(`
@@ -302,6 +311,9 @@ router.put('/:id', requireWrite, async (req, res) => {
   if (!body.seller_id)   return res.status(400).json({ error: 'seller_id is required' });
   if (!body.brand_id)    return res.status(400).json({ error: 'brand_id is required' });
 
+  const sellerErr = enforceSellerIdentity(req.user, body.seller_id);
+  if (sellerErr) return res.status(403).json({ error: sellerErr });
+
   const stageErr = validateStageLabel(body.stage_label);
   if (stageErr) return res.status(400).json({ error: stageErr });
 
@@ -316,6 +328,8 @@ router.put('/:id', requireWrite, async (req, res) => {
   if (transactionType === false) return res.status(400).json({ error: 'Invalid transaction_type' });
 
   if (isLossRow) {
+    const tcvErr = validateTcv(body.tcv ?? 0, { allowZero: true });
+    if (tcvErr) return res.status(400).json({ error: tcvErr });
     const tcv = body.tcv !== undefined && body.tcv !== null ? Number(body.tcv) : 0;
     const lossAt = existing[0].stage_label === 'LOSS' ? existing[0].loss_at : new Date().toISOString();
 
@@ -374,7 +388,8 @@ router.put('/:id', requireWrite, async (req, res) => {
     return res.json(tx);
   }
 
-  if (body.tcv === undefined || body.tcv === null) return res.status(400).json({ error: 'tcv is required' });
+  const tcvErr = validateTcv(body.tcv);
+  if (tcvErr) return res.status(400).json({ error: tcvErr });
 
   const allocResult = resolveAllocations(body);
   if (allocResult.error) return res.status(400).json({ error: allocResult.error });
@@ -382,10 +397,8 @@ router.put('/:id', requireWrite, async (req, res) => {
   const { allocation_q1, allocation_q2, allocation_q3, allocation_q4 } = allocResult;
 
   if (!body.quarter) {
-    const sum = allocation_q1 + allocation_q2 + allocation_q3 + allocation_q4;
-    if (Math.abs(sum - 1.0) > 0.001) {
-      return res.status(400).json({ error: `Allocations must sum to 1.0 (got ${sum.toFixed(4)})` });
-    }
+    const allocErr = validateAllocations(allocation_q1, allocation_q2, allocation_q3, allocation_q4);
+    if (allocErr) return res.status(400).json({ error: allocErr });
   }
 
   const oldStage = existing[0].stage_label;
@@ -405,6 +418,7 @@ router.put('/:id', requireWrite, async (req, res) => {
       opportunity_odoo         = $7,
       brand_opportunity_number = $8,
       stage_label              = $9,
+      status_label             = NULL,
       tcv                      = $10,
       allocation_q1            = $11,
       allocation_q2            = $12,
@@ -484,18 +498,18 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     INSERT INTO transactions (
       client_name, project_name, seller_id, brand_id,
       sub_brand, vendor_name, opportunity_odoo, brand_opportunity_number,
-      due_date, stage_label, tcv,
+      due_date, year, stage_label, status_label, tcv,
       allocation_q1, allocation_q2, allocation_q3, allocation_q4,
       description, invoice_number, notes, highlight_color, transaction_type,
-      updated_by, won_at, loss_at
+      loss_reason, updated_by, won_at, loss_at
     ) VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8,
-      $9, $10, $11,
-      $12, $13, $14, $15,
-      $16, $17, $18, $19, $20,
-      $21,
-      CASE WHEN $10 = 'Won' THEN NOW() ELSE NULL END,
-      CASE WHEN $10 = 'LOSS' THEN NOW() ELSE NULL END
+      $9, $10, $11, $12, $13,
+      $14, $15, $16, $17,
+      $18, $19, $20, $21, $22,
+      $23, $24,
+      CASE WHEN $11 = 'Won' THEN NOW() ELSE NULL END,
+      CASE WHEN $11 = 'LOSS' THEN NOW() ELSE NULL END
     ) RETURNING id
   `, [
     original.client_name,
@@ -507,7 +521,9 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     original.opportunity_odoo,
     original.brand_opportunity_number,
     original.due_date,
+    original.year,
     original.stage_label,
+    original.status_label,
     original.tcv,
     original.allocation_q1,
     original.allocation_q2,
@@ -518,6 +534,7 @@ router.post('/:id/duplicate', requireWrite, async (req, res) => {
     original.notes,
     original.highlight_color     ?? null,
     original.transaction_type    ?? null,
+    original.loss_reason         ?? null,
     req.user?.sellerName ?? req.user?.username ?? 'Admin',
   ]);
 

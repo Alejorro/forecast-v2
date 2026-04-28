@@ -75,7 +75,7 @@ Example values:
 - `currency="US$"  rate=0.00083`  → 1 ARS = 0.00083 US$ → 1 US$ ≈ 1205 ARS
 
 ### Step 2 — Fetch sale orders
-Filter: `state IN ('draft', 'sent', 'sale', 'done')`. Limit: 2000.
+Filter: `state IN ('draft', 'sent', 'sale', 'done')`. Fetches all matching rows using paginated `search_read` batches.
 This includes confirmed orders (invoiced + to invoice) **and quotations** (draft/sent).
 
 **Fields fetched from `sale.order`:**
@@ -115,6 +115,7 @@ Case C — currency == "US$"  (dólar billete / blue)
 ```
 
 `get_rate` always uses the most recent rate <= sale_date (never a future rate).
+`fx_rate_date_used` stores the actual rate date returned by `get_rate`, which may be earlier than `sale_date`.
 If a required rate is missing, `amount_usd_official` is stored as `null` and a warning is logged.
 
 **Verified 2026-04-22:** Cross-checked USD totals against Odoo CSV export. Difference was $0.07 (rounding only). Logic is correct.
@@ -176,7 +177,7 @@ Sellers without match (logged as warnings): `FACTURACION` (uid=43) — generic b
 | `amount_original` | `amount_total` from Odoo |
 | `amount_usd_official` | Computed at sync time (null if rate missing) |
 | `fx_rate_used` | Rate value used for conversion |
-| `fx_rate_date_used` | = `sale_date` (rate is for that date) |
+| `fx_rate_date_used` | Actual date of the FX rate used (most recent rate <= `sale_date`) |
 | `last_sync_at` | Timestamp of last sync |
 | `notes` | Editable |
 | `provider` | Editable |

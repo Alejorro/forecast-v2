@@ -1,5 +1,7 @@
 node_modules
 .env
+.DS_Store
+frontend/dist
 *.db
 *.sqlite
 *.db-shm

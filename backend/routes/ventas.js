@@ -2,8 +2,10 @@ import { Router } from 'express';
 import pool from '../db.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { createOdooClient } from '../lib/odoo-client.js';
+import { wrapAsyncRouter } from '../lib/async-route.js';
 
 const router = Router();
+wrapAsyncRouter(router);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -32,22 +34,22 @@ async function getFxRate(db, date, currencyName) {
 // Port of PriceChecker's convert_to_usd (sync_odoo.py:28).
 // currency names are exactly as Odoo returns them: "USD", "PES", "US$"
 async function computeUsdOfficial(db, amount, currency, saleDate) {
-  if (amount == null || !currency || !saleDate) return { usd: null, rate: null };
+  if (amount == null || !currency || !saleDate) return { usd: null, rate: null, rateDate: null };
 
   // Case A: already USD oficial → 1:1
   if (currency === 'USD') {
-    return { usd: amount, rate: 1 };
+    return { usd: amount, rate: 1, rateDate: saleDate };
   }
 
   const rateUsd = await getFxRate(db, saleDate, 'USD');
   if (!rateUsd) {
     console.warn(`[ventas] No USD rate for ${saleDate}`);
-    return { usd: null, rate: null };
+    return { usd: null, rate: null, rateDate: null };
   }
 
   // Case B: PES (ARS) → price_usd = price * rate_usd
   if (currency === 'PES') {
-    return { usd: amount * rateUsd.rate, rate: rateUsd.rate };
+    return { usd: amount * rateUsd.rate, rate: rateUsd.rate, rateDate: rateUsd.rate_date };
   }
 
   // Case C: US$ (blue) → ars = price / rate_usdd; usd = ars * rate_usd
@@ -55,14 +57,14 @@ async function computeUsdOfficial(db, amount, currency, saleDate) {
     const rateUsdd = await getFxRate(db, saleDate, 'US$');
     if (!rateUsdd) {
       console.warn(`[ventas] No US$ rate for ${saleDate}`);
-      return { usd: null, rate: null };
+      return { usd: null, rate: null, rateDate: null };
     }
     const ars = amount / rateUsdd.rate;
-    return { usd: ars * rateUsd.rate, rate: rateUsdd.rate };
+    return { usd: ars * rateUsd.rate, rate: rateUsdd.rate, rateDate: rateUsdd.rate_date };
   }
 
   console.warn(`[ventas] Unknown currency: ${currency}`);
-  return { usd: null, rate: null };
+  return { usd: null, rate: null, rateDate: null };
 }
 
 // Port of PriceChecker's sync_currency_rates (sync_odoo.py:49).
@@ -98,11 +100,36 @@ async function findSellerId(db, odooUserId, sellerNameRaw) {
     if (res.rows.length) return res.rows[0].id;
   }
   if (sellerNameRaw) {
-    const normalized = sellerNameRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const res = await db.query('SELECT id FROM sellers WHERE name_normalized = $1', [normalized]);
+    const normalized = sellerNameRaw.toLowerCase().trim();
+    const compact = normalized.replace(/[^a-z0-9]/g, '');
+    const res = await db.query(`
+      SELECT id
+      FROM sellers
+      WHERE name_normalized = $1
+         OR regexp_replace(lower(name), '[^a-z0-9]', '', 'g') = $2
+      LIMIT 1
+    `, [normalized, compact]);
     if (res.rows.length) return res.rows[0].id;
   }
   return null;
+}
+
+async function fetchAllSaleOrders(odoo) {
+  const domain = [['state', 'in', ['draft', 'sent', 'sale', 'done']]];
+  const fields = [
+    'id', 'name', 'partner_id', 'user_id', 'brand_id', 'invoice_status',
+    'state', 'date_order', 'currency_id', 'amount_total',
+  ];
+  const limit = 1000;
+  const orders = [];
+
+  for (let offset = 0; ; offset += limit) {
+    const batch = await odoo.searchRead('sale.order', domain, fields, { limit, offset });
+    orders.push(...batch);
+    if (batch.length < limit) break;
+  }
+
+  return orders;
 }
 
 function buildWhereClause(query) {
@@ -119,8 +146,12 @@ function buildWhereClause(query) {
     bindings.push(quarter);
   }
   if (brand) {
-    conditions.push(`so.brand = $${bindings.length + 1}`);
-    bindings.push(brand);
+    if (brand === '__no_brand__') {
+      conditions.push('so.brand IS NULL');
+    } else {
+      conditions.push(`so.brand = $${bindings.length + 1}`);
+      bindings.push(brand);
+    }
   }
   if (seller_id) {
     conditions.push(`so.seller_id = $${bindings.length + 1}`);
@@ -255,13 +286,7 @@ router.post('/sync', requireAdmin, async (_req, res) => {
     console.log(`[ventas sync] currency rates upserted: ${ratesCount}`);
 
     // Step 2: fetch sale orders (invoiced + to invoice + quotations draft/sent)
-    const orders = await odoo.searchRead(
-      'sale.order',
-      [['state', 'in', ['draft', 'sent', 'sale', 'done']]],
-      ['id', 'name', 'partner_id', 'user_id', 'brand_id', 'invoice_status',
-       'state', 'date_order', 'currency_id', 'amount_total'],
-      { limit: 2000 }
-    );
+    const orders = await fetchAllSaleOrders(odoo);
 
     for (const order of orders) {
       try {
@@ -280,7 +305,7 @@ router.post('/sync', requireAdmin, async (_req, res) => {
           warnings.push(`No seller match for Odoo user "${sellerNameRaw}" (uid=${odooUserId}), order ${order.name}`);
         }
 
-        const { usd, rate } = await computeUsdOfficial(pool, order.amount_total, currencyName, saleDate);
+        const { usd, rate, rateDate } = await computeUsdOfficial(pool, order.amount_total, currencyName, saleDate);
         if (usd === null && currencyName) {
           warnings.push(`Could not compute USD for order ${order.name} (currency: ${currencyName}, date: ${saleDate})`);
         }
@@ -313,7 +338,7 @@ router.post('/sync', requireAdmin, async (_req, res) => {
           order.id, order.name, clientName, sellerId, sellerNameRaw,
           brand, order.invoice_status, order.state, saleDate, quarter, year,
           currencyName, order.amount_total, usd,
-          rate, saleDate, syncAt,
+          rate, rateDate, syncAt,
         ]);
 
         upserted++;
