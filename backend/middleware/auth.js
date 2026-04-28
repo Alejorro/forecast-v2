@@ -35,6 +35,14 @@ export function requireAuth(req, res, next) {
   next();
 }
 
+// Require manager role only (stricter than requireAdmin).
+export function requireManager(req, res, next) {
+  if (req.user?.role !== 'manager') {
+    return res.status(403).json({ error: 'Manager access required' });
+  }
+  next();
+}
+
 // Require admin, manager, or seller.
 export function requireWrite(req, res, next) {
   const role = req.user?.role;

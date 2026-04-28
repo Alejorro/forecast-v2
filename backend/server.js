@@ -14,6 +14,7 @@ import authRouter         from './routes/auth.js';
 import performanceRouter  from './routes/performance.js';
 import activityRouter     from './routes/activity.js';
 import ventasRouter, { startVentasAutoSync } from './routes/ventas.js';
+import usersRouter        from './routes/users.js';
 
 import { attachUser, requireAdmin, requireAuth } from './middleware/auth.js';
 
@@ -93,6 +94,7 @@ app.use('/api/overview',     overviewRouter);
 app.use('/api/performance', performanceRouter);
 app.use('/api/activity',   activityRouter);
 app.use('/api/ventas',     ventasRouter);
+app.use('/api/users',      usersRouter);
 
 // summary routes: /api/brands/:id/summary and /api/sellers/summary
 app.use('/api', summaryRouter);

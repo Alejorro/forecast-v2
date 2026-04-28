@@ -40,7 +40,7 @@ router.post('/login', checkLoginRateLimit, async (req, res) => {
     return res.status(400).json({ error: 'username and password are required' });
   }
 
-  const user = findUser(String(username).trim(), String(password));
+  const user = await findUser(String(username).trim(), String(password));
   if (!user) {
     return res.status(401).json({ error: 'Invalid credentials' });
   }

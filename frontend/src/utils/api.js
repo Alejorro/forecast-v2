@@ -173,3 +173,28 @@ export function upsertFxRate(data) {
     body: JSON.stringify(data),
   })
 }
+
+// --- Users ---
+export function getUsers() {
+  return request('/api/users')
+}
+
+export function createUser(data) {
+  return request('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+}
+
+export function updateUser(username, data) {
+  return request(`/api/users/${encodeURIComponent(username)}`, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}
+
+export function deleteUser(username) {
+  return request(`/api/users/${encodeURIComponent(username)}`, {
+    method: 'DELETE',
+  })
+}

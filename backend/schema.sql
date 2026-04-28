@@ -127,3 +127,31 @@ CREATE TABLE IF NOT EXISTS sales_odoo (
 -- seen in the latest successful sync are hidden from operational Ventas views.
 ALTER TABLE sales_odoo ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE sales_odoo ADD COLUMN IF NOT EXISTS stale_at TIMESTAMPTZ;
+
+-- Users table (replaces hardcoded auth/users.js; roles: admin | manager | seller)
+CREATE TABLE IF NOT EXISTS users (
+  username    TEXT PRIMARY KEY,
+  password    TEXT NOT NULL,
+  role        TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'seller')),
+  seller_name TEXT
+);
+
+-- Seed default users — idempotent, existing rows are never overwritten
+INSERT INTO users (username, password, role, seller_name) VALUES
+  ('admin',     'alejocapo',     'admin',   NULL),
+  ('Alejorro',  'alejorro97',    'manager', NULL),
+  ('Brian',     'brian7293',     'admin',   'Brian Zino'),
+  ('Claudio',   'claudio6382',   'admin',   'Claudio Guerra'),
+  ('JC',        'jc4728',        'admin',   'Juan Carlos Romitelli'),
+  ('Mariano',   'mariano3651',   'admin',   'Mariano Basso'),
+  ('Alejandro', 'alejandro3847', 'seller',  'Alejandro Simeone'),
+  ('CarlosF',   'carlosf5621',   'seller',  'Carlos Furnkorn'),
+  ('CarlosL',   'carlosl8274',   'seller',  'Carlos Lopez'),
+  ('Christian', 'christian4519', 'seller',  'Christian Braun'),
+  ('Fabio',     'fabio2947',     'seller',  'Fabio Villamayor'),
+  ('Florencia', 'florencia8163', 'seller',  'Florencia Vargas'),
+  ('Mathias',   'mathias9274',   'seller',  'Mathias Villamayor'),
+  ('Milton',    'milton5839',    'seller',  'Milton Gallo'),
+  ('Oscar',     'oscar7162',     'seller',  'Oscar Ontano'),
+  ('Sandra',    'sandra4803',    'seller',  'Sandra Tedesco')
+ON CONFLICT (username) DO NOTHING;

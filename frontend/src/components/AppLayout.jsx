@@ -4,16 +4,21 @@ import { useAuth } from '../context/AuthContext'
 import { invalidateAllSessions } from '../utils/api'
 import t from '../utils/t'
 
+// Visibility flags:
+//   managerOnly    — only role === 'manager'
+//   adminOrManager — role === 'admin' or 'manager' (hidden from sellers)
+//   (none)         — all roles
 const NAV_ITEMS = [
-  { id: 'overview',     label: t.nav.overview },
-  { id: 'transactions', label: t.nav.transactions },
-  { id: 'plans',        label: t.nav.plans,   sellerHidden: true },
-  { id: 'brands',       label: t.nav.brands },
-  { id: 'performance',  label: 'Performance' },
-  { id: 'sellers',      label: t.nav.sellers,  managerOnly: true, separator: true },
-  { id: 'ventas',       label: 'Ventas',        managerOnly: true },
-  { id: 'activity',     label: 'Actividad',     managerOnly: true },
-  { id: 'import',       label: t.nav.import,   adminOnly: true, hidden: true },
+  { id: 'overview',      label: t.nav.overview },
+  { id: 'transactions',  label: t.nav.transactions },
+  { id: 'brands',        label: t.nav.brands },
+  { id: 'performance',   label: 'Performance' },
+  { id: 'ventas',        label: 'Ventas',     adminOrManager: true, separator: true },
+  { id: 'plans',         label: t.nav.plans,  managerOnly: true },
+  { id: 'sellers',       label: t.nav.sellers, managerOnly: true },
+  { id: 'activity',      label: 'Actividad',  managerOnly: true },
+  { id: 'usuarios',      label: 'Usuarios',   managerOnly: true },
+  { id: 'import',        label: t.nav.import, hidden: true },
 ]
 
 function UserBadge({ user, onLogout, onInvalidateAll }) {
@@ -66,8 +71,9 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
   const { year, setYear, yearOptions } = useAppContext()
   const { user, logout } = useAuth()
 
-  const isSeller = user?.role === 'seller'
+  const isSeller  = user?.role === 'seller'
   const isManager = user?.role === 'manager'
+  const isAdmin   = user?.role === 'admin'
   const [invalidating, setInvalidating] = useState(false)
 
   async function handleInvalidateAll() {
@@ -83,9 +89,8 @@ export default function AppLayout({ currentPage, onNavigate, children }) {
 
   const visibleNav = NAV_ITEMS.filter((item) => {
     if (item.hidden) return false
-    if (item.sellerHidden && isSeller) return false
     if (item.managerOnly && !isManager) return false
-    if (item.adminOnly && !isManager) return false
+    if (item.adminOrManager && isSeller) return false
     return true
   })
 
